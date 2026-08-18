@@ -1,0 +1,13 @@
+{
+  "name": "Cetak KTP Generator - CDN Tools",
+  "short_name": "Cetak KTP",
+  "description": "Generator layout cetak KTP otomatis: crop, HD-kan, susun ke F4",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f6f3ea",
+  "theme_color": "#0f4c3a",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

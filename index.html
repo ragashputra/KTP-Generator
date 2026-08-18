@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#0b3d2e">
+<title>Cetak KTP — CDN Tools</title>
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#12241d;
+    --ink-soft:#5c6a62;
+    --paper:#f3f1ea;
+    --card:#ffffff;
+    --green-950:#0a2e23;
+    --green-900:#0d3a2c;
+    --green-800:#124a38;
+    --green-700:#1a6349;
+    --green-600:#1f7a58;
+    --green-500:#2f9873;
+    --gold:#c9973e;
+    --gold-deep:#a97a2c;
+    --line:#e4e0d3;
+    --line-soft:#edeae0;
+    --danger:#c04a35;
+    --shadow-sm:0 1px 3px rgba(15,40,30,.06), 0 1px 2px rgba(15,40,30,.04);
+    --shadow-md:0 4px 16px rgba(15,40,30,.08), 0 2px 6px rgba(15,40,30,.05);
+    --shadow-lg:0 20px 50px rgba(9,30,22,.18), 0 6px 18px rgba(9,30,22,.10);
+    --radius-lg:20px;
+    --radius-md:14px;
+    --radius-sm:10px;
+    --mono:'JetBrains Mono','SFMono-Regular',Consolas,monospace;
+    --sans:'Inter',-apple-system,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html{-webkit-tap-highlight-color:transparent;}
+  body{
+    margin:0;
+    font-family:var(--sans);
+    background:
+      radial-gradient(1100px 480px at 12% -8%, rgba(31,122,88,.10), transparent 60%),
+      radial-gradient(900px 420px at 100% 0%, rgba(201,151,62,.10), transparent 55%),
+      var(--paper);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  ::selection{background:var(--gold);color:#fff;}
+
+  /* ============ Topbar ============ */
+  header.top{
+    position:sticky;top:0;z-index:40;
+    background:linear-gradient(135deg,var(--green-950),var(--green-800) 70%,var(--green-700));
+    color:#f4f1e6;
+    padding:16px 20px;
+    display:flex;align-items:center;justify-content:space-between;
+    box-shadow:0 6px 24px rgba(9,30,22,.28);
+  }
+  header.top .brand{display:flex;align-items:center;gap:12px;min-width:0;}
+  header.top .mark{
+    width:38px;height:38px;border-radius:11px;
+    background:linear-gradient(135deg,var(--gold),var(--gold-deep));
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-weight:700;font-size:13px;color:#211405;
+    flex-shrink:0;
+    box-shadow:0 3px 10px rgba(169,122,44,.4), inset 0 1px 0 rgba(255,255,255,.35);
+  }
+  header.top .txt{min-width:0;}
+  header.top h1{font-size:15.5px;margin:0;font-weight:700;letter-spacing:.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  header.top p{margin:1px 0 0;font-size:11px;opacity:.62;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  header.top .count{
+    font-family:var(--mono);font-size:12px;font-weight:600;
+    background:rgba(255,255,255,.09);
+    padding:7px 14px;border-radius:24px;
+    border:1px solid rgba(255,255,255,.14);
+    flex-shrink:0;
+    backdrop-filter:blur(6px);
+  }
+
+  main{max-width:1180px;margin:0 auto;padding:24px 16px 110px;}
+
+  /* ============ Drop zone ============ */
+  .dropzone{
+    border:1.5px dashed #c7bf9f;
+    border-radius:var(--radius-lg);
+    background:linear-gradient(180deg,#ffffff, #fdfcf8);
+    padding:40px 24px;
+    text-align:center;
+    cursor:pointer;
+    transition:.2s;
+    position:relative;
+    box-shadow:var(--shadow-sm);
+  }
+  .dropzone.drag{border-color:var(--green-600);background:#eef8f2;box-shadow:0 0 0 4px rgba(47,152,115,.12), var(--shadow-md);}
+  .dropzone .icon{
+    width:58px;height:58px;margin:0 auto 14px;
+    border-radius:50%;
+    background:linear-gradient(135deg,var(--green-800),var(--green-600));
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(18,74,56,.28);
+  }
+  .dropzone .icon svg{width:26px;height:26px;stroke:#f4f1e6;}
+  .dropzone h2{font-size:17px;margin:0 0 5px;font-weight:700;letter-spacing:-.1px;}
+  .dropzone p{font-size:13px;color:var(--ink-soft);margin:0;}
+  .dropzone input{display:none;}
+  .dz-actions{display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap;}
+
+  .btn{
+    font-family:var(--sans);
+    border:none;border-radius:11px;
+    padding:11px 20px;
+    font-size:13.5px;font-weight:600;
+    cursor:pointer;
+    display:inline-flex;align-items:center;gap:8px;
+    transition:.16s cubic-bezier(.4,0,.2,1);
+    letter-spacing:.1px;
+  }
+  .btn-primary{background:linear-gradient(135deg,var(--green-700),var(--green-600));color:#fff;box-shadow:0 4px 14px rgba(26,99,73,.3), inset 0 1px 0 rgba(255,255,255,.12);}
+  .btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(26,99,73,.38), inset 0 1px 0 rgba(255,255,255,.12);}
+  .btn-primary:active{transform:translateY(0);}
+  .btn-ghost{background:#fff;color:var(--green-800);border:1.5px solid var(--line);}
+  .btn-ghost:hover{border-color:var(--green-600);background:#f7faf8;}
+  .btn-gold{background:linear-gradient(135deg,var(--gold),var(--gold-deep));color:#241804;box-shadow:0 4px 14px rgba(169,122,44,.35), inset 0 1px 0 rgba(255,255,255,.3);}
+  .btn-gold:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(169,122,44,.42), inset 0 1px 0 rgba(255,255,255,.3);}
+  .btn-gold:active{transform:translateY(0);}
+  .btn:disabled{opacity:.4;cursor:not-allowed;transform:none !important;box-shadow:none !important;}
+  .btn svg{width:15px;height:15px;flex-shrink:0;}
+
+  /* ============ Section headers ============ */
+  .sect{margin-top:36px;}
+  .sect-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;}
+  .sect-head h3{font-size:13px;margin:0;text-transform:uppercase;letter-spacing:.8px;color:var(--green-800);font-weight:800;}
+  .sect-head .sub{font-size:12px;color:#9a8f75;font-family:var(--mono);}
+
+  /* ============ Cards grid ============ */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;}
+  .kcard{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:var(--radius-md);
+    overflow:hidden;
+    display:flex;flex-direction:column;
+    box-shadow:var(--shadow-sm);
+    transition:.18s;
+  }
+  .kcard:hover{box-shadow:var(--shadow-md);border-color:#d8d2bd;}
+
+  /* Thumbnail selalu proporsional (rasio asli KTP 13.5:9), foto SELALU
+     tampil utuh (contain) dengan letterbox halus di belakang — tidak
+     pernah gepeng/peang, apapun rasio foto mentahnya. */
+  .kcard .thumb{
+    aspect-ratio:1.5/1;
+    background:
+      linear-gradient(180deg, rgba(0,0,0,.02), rgba(0,0,0,.05)),
+      repeating-conic-gradient(#f1eee3 0% 25%, #e7e3d3 0% 50%) 50%/14px 14px;
+    display:flex;align-items:center;justify-content:center;
+    position:relative;
+    overflow:hidden;
+  }
+  .kcard .thumb.thumb-ready{
+    background:linear-gradient(180deg,#fbfaf7,#f2efe6);
+  }
+  .kcard .thumb img{
+    width:100%;height:100%;display:block;
+    object-fit:contain;
+  }
+  .kcard .thumb.thumb-ready img{
+    filter:drop-shadow(0 3px 10px rgba(15,40,30,.16));
+  }
+  .kcard .thumb .status{
+    position:absolute;top:9px;left:9px;
+    font-family:var(--mono);font-size:9.5px;font-weight:700;
+    padding:4px 9px;border-radius:20px;
+    text-transform:uppercase;letter-spacing:.5px;
+    box-shadow:0 2px 6px rgba(0,0,0,.18);
+  }
+  .status.raw{background:rgba(30,30,30,.85);color:#fff;backdrop-filter:blur(4px);}
+  .status.cropped{background:var(--green-600);color:#fff;}
+  .status.enhanced{background:var(--gold);color:#241804;}
+
+  .kcard .body{padding:12px 13px 13px;display:flex;flex-direction:column;gap:9px;flex:1;}
+  .kcard .phone-row{display:flex;align-items:center;gap:7px;}
+  .kcard .phone-row svg{width:14px;height:14px;stroke:#9a8f75;flex-shrink:0;}
+  .kcard input[type=text]{
+    font-family:var(--mono);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:8px 10px;font-size:12px;width:100%;
+    background:#fbfaf6;
+    transition:.15s;
+  }
+  .kcard input[type=text]:focus{outline:none;border-color:var(--green-600);box-shadow:0 0 0 3px rgba(47,152,115,.14);background:#fff;}
+  .kcard .actions{display:flex;gap:7px;margin-top:auto;}
+  .icnbtn{
+    flex:1;
+    border:1px solid var(--line);background:#fff;border-radius:9px;
+    padding:8px;display:flex;align-items:center;justify-content:center;
+    cursor:pointer;transition:.15s;
+  }
+  .icnbtn svg{width:14.5px;height:14.5px;stroke:var(--green-800);}
+  .icnbtn:hover{background:#f2efe0;border-color:#d8d2bd;transform:translateY(-1px);}
+  .icnbtn.danger svg{stroke:var(--danger);}
+  .icnbtn:disabled{opacity:.35;cursor:not-allowed;transform:none;}
+  .spin{animation:spin .8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* ============ Empty state ============ */
+  .empty{
+    text-align:center;padding:52px 20px;color:#a89d80;
+    font-size:13px;font-family:var(--mono);
+    background:#fff;border:1px dashed var(--line);border-radius:var(--radius-md);
+  }
+
+  /* ============ Print settings bar ============ */
+  .print-bar{
+    background:linear-gradient(180deg,#ffffff,#fdfcf7);
+    border:1px solid var(--line);
+    border-radius:var(--radius-lg);
+    padding:20px 22px;
+    display:flex;gap:22px;flex-wrap:wrap;align-items:center;
+    justify-content:space-between;
+    box-shadow:var(--shadow-sm);
+  }
+  .print-bar .specs{display:flex;gap:22px;flex-wrap:wrap;row-gap:16px;}
+  .spec{display:flex;flex-direction:column;gap:3px;}
+  .spec .k{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:#a89d80;font-family:var(--mono);font-weight:600;}
+  .spec .v{font-size:13.5px;font-weight:700;color:var(--ink);font-family:var(--mono);}
+
+  /* Paper size select — custom native select styled premium, with full
+     catalog like Word/Windows print dialog (grouped by kategori) */
+  .paper-select-wrap{display:flex;flex-direction:column;gap:3px;position:relative;}
+  .select-shell{position:relative;}
+  select#paperSelect{
+    appearance:none;-webkit-appearance:none;
+    font-family:var(--mono);
+    font-size:12.5px;font-weight:700;color:var(--ink);
+    background:#fbfaf6;
+    border:1.5px solid var(--line);
+    border-radius:9px;
+    padding:9px 34px 9px 12px;
+    cursor:pointer;
+    min-width:220px;
+    transition:.15s;
+  }
+  select#paperSelect:hover{border-color:#cfc7ac;}
+  select#paperSelect:focus{outline:none;border-color:var(--green-600);box-shadow:0 0 0 3px rgba(47,152,115,.14);}
+  .select-shell::after{
+    content:'';
+    position:absolute;right:12px;top:50%;
+    width:9px;height:9px;
+    border-right:2px solid var(--green-700);border-bottom:2px solid var(--green-700);
+    transform:translateY(-65%) rotate(45deg);
+    pointer-events:none;
+  }
+
+  /* ============ Modal / crop editor ============ */
+  .modal-backdrop{
+    position:fixed;inset:0;background:rgba(8,16,12,.72);
+    z-index:100;display:flex;align-items:center;justify-content:center;
+    padding:16px;
+    backdrop-filter:blur(3px);
+  }
+  .modal{
+    background:var(--paper);
+    border-radius:22px;
+    width:100%;max-width:720px;
+    max-height:92vh;
+    overflow:auto;
+    padding:22px;
+    box-shadow:var(--shadow-lg);
+    position:relative;
+  }
+  .modal h3{margin:0 0 4px;font-size:17px;font-weight:800;letter-spacing:-.2px;}
+  .modal p.hint{margin:0 0 16px;font-size:12.5px;color:var(--ink-soft);line-height:1.5;}
+  .crop-modal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-right:34px;}
+  .crop-progress{
+    font-family:var(--mono);font-size:11.5px;font-weight:700;color:#fff;
+    background:var(--green-600);padding:5px 12px;border-radius:20px;
+    flex-shrink:0;white-space:nowrap;
+  }
+  .crop-stage{
+    position:relative;
+    background:#141b17;
+    border-radius:14px;
+    overflow:hidden;
+    touch-action:none;
+    user-select:none;
+    max-height:58vh;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);
+  }
+  .crop-stage canvas{display:block;max-width:100%;height:auto;}
+  .crop-controls{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;}
+  .crop-controls .btn{flex:1;justify-content:center;min-width:120px;}
+  .modal-close{
+    position:absolute;top:16px;right:16px;
+    width:32px;height:32px;border-radius:50%;
+    background:rgba(0,0,0,.06);border:none;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:.15s;
+    z-index:2;
+  }
+  .modal-close:hover{background:rgba(0,0,0,.11);}
+  .modal-close svg{width:16px;height:16px;}
+
+  /* ============ Preview modal (print layout) ============ */
+  .preview-modal{max-width:640px;}
+  .sheet-wrap{
+    background:linear-gradient(180deg,#20261f,#171b16);
+    border-radius:14px;
+    padding:20px;
+    display:flex;justify-content:center;align-items:flex-start;overflow:auto;
+    max-height:70vh;
+  }
+  #sheetCanvas{
+    background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.45);
+    max-width:100%;height:auto;display:block;
+    border-radius:2px;
+  }
+  .preview-meta{
+    display:flex;align-items:center;justify-content:space-between;
+    margin:12px 2px 0;flex-wrap:wrap;gap:8px;
+  }
+  .preview-meta .pg-nav{display:flex;align-items:center;gap:8px;}
+  .preview-meta .pg-nav button{
+    width:32px;height:32px;border-radius:9px;
+    border:1.5px solid var(--line);background:#fff;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:.15s;
+  }
+  .preview-meta .pg-nav button:hover:not(:disabled){border-color:var(--green-600);}
+  .preview-meta .pg-nav button:disabled{opacity:.35;cursor:not-allowed;}
+  .preview-meta .pg-nav button svg{width:15px;height:15px;stroke:var(--green-800);}
+  .preview-meta .pg-label{font-family:var(--mono);font-size:12px;color:var(--ink-soft);font-weight:600;}
+
+  /* ============ Toast ============ */
+  .toast{
+    position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+    background:var(--green-950);color:#f4f1e6;
+    padding:12px 22px;border-radius:12px;
+    font-size:13px;font-weight:500;z-index:200;
+    box-shadow:0 10px 30px rgba(0,0,0,.35);
+    opacity:0;pointer-events:none;transition:.28s cubic-bezier(.4,0,.2,1);
+    max-width:90vw;text-align:center;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
+
+  /* ============ Bottom action bar (mobile) ============ */
+  .fab-bar{
+    position:fixed;bottom:0;left:0;right:0;
+    background:rgba(255,255,255,.92);
+    backdrop-filter:blur(12px);
+    border-top:1px solid var(--line);
+    padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+    display:flex;gap:10px;z-index:30;
+    box-shadow:0 -8px 24px rgba(0,0,0,.06);
+  }
+  .fab-bar .btn{flex:1;justify-content:center;padding:13px;font-size:14px;}
+
+  @media (min-width:720px){
+    .fab-bar{display:none;}
+    main{padding-bottom:60px;}
+  }
+
+  .progress-mini{
+    font-family:var(--mono);font-size:10.5px;color:var(--ink-soft);
+    display:flex;align-items:center;gap:6px;
+  }
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--gold);animation:pulse 1.1s infinite;}
+  @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+
+  /* ============ Rotate 90° buttons in crop modal ============ */
+  .rotate-row{
+    display:flex;align-items:center;gap:12px;
+    margin-top:16px;
+    background:#fff;border:1px solid var(--line);border-radius:12px;
+    padding:12px 14px;
+    flex-wrap:wrap;
+    box-shadow:var(--shadow-sm);
+  }
+  .rotate-row .txt{flex:1;min-width:150px;}
+  .rotate-row .txt b{display:block;font-size:12.5px;color:var(--ink);}
+  .rotate-row .txt span{font-size:11px;color:var(--ink-soft);}
+  .rotate-btns{display:flex;gap:8px;}
+  .rotbtn{
+    width:42px;height:42px;border-radius:10px;
+    border:1.5px solid var(--line);background:#fff;
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;transition:.15s;flex-shrink:0;
+  }
+  .rotbtn:hover{border-color:var(--green-600);background:#eef8f2;}
+  .rotbtn:active{transform:scale(.94);}
+  .rotbtn svg{width:19px;height:19px;stroke:var(--green-800);}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <div class="mark">KTP</div>
+    <div class="txt">
+      <h1>Cetak KTP Generator</h1>
+      <p>CDN Internal Tools</p>
+    </div>
+  </div>
+  <div class="count" id="headerCount">0 kartu</div>
+</header>
+
+<main>
+
+  <div class="dropzone" id="dropzone">
+    <div class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+    </div>
+    <h2>Upload Foto KTP</h2>
+    <p>Tarik file ke sini, atau pilih dari galeri — bisa banyak sekaligus</p>
+    <div class="dz-actions" onclick="event.stopPropagation()">
+      <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+        Pilih dari Galeri
+      </button>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" multiple>
+  </div>
+
+  <div class="sect">
+    <div class="sect-head">
+      <h3>Daftar KTP</h3>
+      <span class="sub" id="listSub">belum ada data</span>
+    </div>
+    <div class="grid" id="cardGrid"></div>
+    <div class="empty" id="emptyState">— upload foto KTP untuk mulai —</div>
+  </div>
+
+  <div class="sect">
+    <div class="sect-head">
+      <h3>Pengaturan Cetak</h3>
+    </div>
+    <div class="print-bar">
+      <div class="specs">
+        <div class="spec"><span class="k">Kartu</span><span class="v">13.5 × 9 cm</span></div>
+        <div class="spec paper-select-wrap">
+          <span class="k">Ukuran Kertas</span>
+          <div class="select-shell">
+            <select id="paperSelect"></select>
+          </div>
+        </div>
+        <div class="spec"><span class="k">Layout</span><span class="v" id="layoutInfo">2 kolom × 2 baris</span></div>
+        <div class="spec"><span class="k">Space No. HP</span><span class="v">✓ disertakan</span></div>
+      </div>
+      <button class="btn btn-gold" id="btnPreview" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+        Lihat &amp; Cetak PDF
+      </button>
+    </div>
+  </div>
+
+</main>
+
+<div class="fab-bar">
+  <button class="btn btn-ghost" onclick="document.getElementById('fileInput').click()">+ Tambah KTP</button>
+  <button class="btn btn-gold" id="btnPreviewMobile" disabled>Cetak PDF</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Crop Editor Modal -->
+<div class="modal-backdrop" id="cropModal" style="display:none;">
+  <div class="modal">
+    <button class="modal-close" onclick="closeCropModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    <div class="crop-modal-head">
+      <h3>Atur Crop KTP</h3>
+      <span class="crop-progress" id="cropProgress" style="display:none;"></span>
+    </div>
+    <p class="hint">Kotak hijau otomatis mendeteksi 4 sisi kartu &amp; meluruskan perspektif. Geser sudut kalau kurang pas, lalu simpan. Kalau upload banyak sekaligus, tiap foto dibuka bergiliran mulai dari yang pertama.</p>
+    <div class="crop-stage" id="cropStage">
+      <canvas id="cropCanvas"></canvas>
+    </div>
+    <div class="rotate-row">
+      <div class="txt">
+        <b>Putar Foto</b>
+        <span>Kalau hasil foto miring 90°/terbalik, putar dulu ke posisi yang benar sebelum crop.</span>
+      </div>
+      <div class="rotate-btns">
+        <button type="button" class="rotbtn" id="btnRotateLeft" title="Putar kiri 90°">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 015.5 5.5v0a5.5 5.5 0 01-5.5 5.5H11"/></svg>
+        </button>
+        <button type="button" class="rotbtn" id="btnRotateRight" title="Putar kanan 90°">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 004 14.5v0A5.5 5.5 0 009.5 20H13"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="crop-controls">
+      <button class="btn btn-ghost" onclick="autoDetectCrop()">↺ Deteksi Ulang</button>
+      <button class="btn btn-ghost" id="btnSkipCrop" onclick="closeCropModal()" style="display:none;">Lewati Foto Ini →</button>
+      <button class="btn btn-primary" onclick="saveCrop()">✓ Simpan Crop</button>
+    </div>
+  </div>
+</div>
+
+<!-- Print Preview Modal -->
+<div class="modal-backdrop" id="previewModal" style="display:none;">
+  <div class="modal preview-modal">
+    <button class="modal-close" onclick="closePreviewModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    <h3>Preview Cetak</h3>
+    <p class="hint">Setiap kartu diputar otomatis ke posisi berdiri saat dicetak, supaya kartu tersusun rapi per lembar — lengkap dengan space kosong untuk tulis nomor HP pakai pulpen.</p>
+    <div class="sheet-wrap">
+      <canvas id="sheetCanvas"></canvas>
+    </div>
+    <div class="preview-meta">
+      <div class="pg-nav">
+        <button type="button" id="btnPrevPage" title="Halaman sebelumnya">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <span class="pg-label" id="pgLabel">Halaman 1/1</span>
+        <button type="button" id="btnNextPage" title="Halaman berikutnya">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="crop-controls">
+      <span class="progress-mini" id="pdfProgress" style="display:none;"><span class="dot"></span> Menyiapkan PDF...</span>
+      <button class="btn btn-ghost" onclick="closePreviewModal()">Tutup</button>
+      <button class="btn btn-gold" onclick="downloadPDF()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Download PDF Siap Cetak
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
