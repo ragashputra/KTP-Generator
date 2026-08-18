@@ -257,38 +257,55 @@
     background:linear-gradient(180deg,#ffffff,#fdfcf7);
     border:1px solid var(--line);
     border-radius:var(--radius-lg);
-    padding:20px 22px;
-    display:flex;gap:22px;flex-wrap:wrap;align-items:center;
-    justify-content:space-between;
+    padding:24px 26px;
     box-shadow:var(--shadow-sm);
   }
+  /* 2×2 grid dengan lebar tetap (bukan auto-fit) supaya tiap kolom selalu
+     dapat ruang cukup & gak pernah kepotong/mepet — "Space No. HP" digabung
+     jadi catatan kecil di bawah Layout (bukan spec terpisah), jadi cuma 4
+     kontrol inti yang perlu ditata: rapi jadi 2 baris x 2 kolom. */
   .print-bar .specs{
     display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
-    gap:20px;
-    flex:1;
-    min-width:280px;
+    grid-template-columns:1fr 1fr;
+    gap:22px 28px;
   }
-  .spec{display:flex;flex-direction:column;gap:6px;}
-  .spec .k{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:#a89d80;font-family:var(--mono);font-weight:600;height:12px;line-height:12px;}
+  @media (max-width:640px){
+    .print-bar .specs{grid-template-columns:1fr;gap:20px;}
+  }
+  .spec{display:flex;flex-direction:column;gap:8px;min-width:0;}
+  .spec .k{
+    font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;
+    color:#8a806b;font-family:var(--mono);font-weight:700;
+  }
   .spec .v{font-size:13.5px;font-weight:700;color:var(--ink);font-family:var(--mono);height:38px;display:flex;align-items:center;}
+  .print-bar .print-actions{
+    display:flex;justify-content:flex-end;
+    margin-top:24px;padding-top:22px;
+    border-top:1px solid var(--line);
+  }
+  .print-bar .print-actions .btn{min-width:220px;justify-content:center;}
+  @media (max-width:640px){
+    .print-bar .print-actions{justify-content:stretch;}
+    .print-bar .print-actions .btn{width:100%;}
+  }
 
   /* Ukuran gambar KTP — dua input angka (lebar x tinggi cm) editable,
      default 13.5x9cm (ukuran fisik KTP asli), gaya visual disamakan
-     dengan select#paperSelect di sebelahnya. */
-  .card-size-wrap{display:flex;flex-direction:column;gap:6px;min-width:200px;}
-  .card-size-inputs{display:flex;align-items:center;gap:6px;height:38px;}
+     dengan select#paperSelect di sebelahnya. min-width dijaga cukup
+     lebar supaya angka desimal (mis. "13.5") gak pernah kepotong. */
+  .card-size-wrap{display:flex;flex-direction:column;gap:8px;min-width:0;}
+  .card-size-inputs{display:flex;align-items:center;gap:8px;height:38px;}
   .dim-field{
-    position:relative;display:flex;align-items:center;flex:1;min-width:0;
+    position:relative;display:flex;align-items:center;flex:1 1 0;min-width:64px;
   }
   .dim-field input[type=number]{
     appearance:none;-webkit-appearance:none;-moz-appearance:textfield;
     font-family:var(--mono);
-    font-size:12.5px;font-weight:700;color:var(--ink);
+    font-size:13px;font-weight:700;color:var(--ink);
     background:#fbfaf6;
     border:1.5px solid var(--line);
     border-radius:9px;
-    padding:0 30px 0 10px;
+    padding:0 28px 0 10px;
     height:38px;width:100%;min-width:0;
     transition:.15s;
   }
@@ -297,8 +314,8 @@
   .dim-field input[type=number]:hover{border-color:#cfc7ac;}
   .dim-field input[type=number]:focus{outline:none;border-color:var(--green-600);box-shadow:0 0 0 3px rgba(47,152,115,.14);}
   .dim-field .unit{
-    position:absolute;right:10px;top:50%;transform:translateY(-50%);
-    font-family:var(--mono);font-size:10.5px;font-weight:700;color:#a89d80;
+    position:absolute;right:9px;top:50%;transform:translateY(-50%);
+    font-family:var(--mono);font-size:10px;font-weight:700;color:#a89d80;
     pointer-events:none;
   }
   .dim-x{font-family:var(--mono);font-size:12px;font-weight:700;color:#a89d80;flex-shrink:0;}
@@ -312,8 +329,10 @@
   .dim-reset:active{transform:scale(.92);}
 
   /* Paper size select — custom native select styled premium, with full
-     catalog like Word/Windows print dialog (grouped by kategori) */
-  .paper-select-wrap{display:flex;flex-direction:column;gap:6px;position:relative;}
+     catalog like Word/Windows print dialog (grouped by kategori). Text
+     dikasih text-overflow:ellipsis sbg jaring pengaman kalau ada opsi
+     yang tetap kepanjangan, jadi ga pernah kepotong mendadak/mentah. */
+  .paper-select-wrap{display:flex;flex-direction:column;gap:8px;position:relative;}
   .select-shell{position:relative;height:38px;display:flex;align-items:center;}
   select#paperSelect{
     appearance:none;-webkit-appearance:none;
@@ -325,7 +344,8 @@
     padding:0 34px 0 12px;
     height:38px;width:100%;
     cursor:pointer;
-    min-width:190px;
+    min-width:0;
+    text-overflow:ellipsis;
     transition:.15s;
   }
   select#paperSelect:hover{border-color:#cfc7ac;}
@@ -339,9 +359,11 @@
     pointer-events:none;
   }
 
-  /* Layout kolom x baris select — sama style dgn paper-select, plus baris
-     kecil di bawahnya yang menampilkan hasil hitungan (mis. "4 kartu/lembar") */
-  .layout-select-wrap{display:flex;flex-direction:column;gap:6px;position:relative;min-width:210px;}
+  /* Layout kolom x baris select — sama style dgn paper-select, plus footer
+     kecil di bawahnya: badge hasil hitungan (mis. "2 kolom × 2 baris") +
+     catatan singkat soal space No. HP (digabung ke sini, bukan spec
+     terpisah, supaya panel lebih ringkas & gak ada kolom "kosong"). */
+  .layout-select-wrap{display:flex;flex-direction:column;gap:8px;position:relative;min-width:0;}
   select#layoutModeSelect{
     appearance:none;-webkit-appearance:none;
     font-family:var(--mono);
@@ -352,18 +374,48 @@
     padding:0 34px 0 12px;
     height:38px;width:100%;
     cursor:pointer;
-    min-width:190px;
+    min-width:0;
+    text-overflow:ellipsis;
     transition:.15s;
   }
   select#layoutModeSelect:hover{border-color:#cfc7ac;}
   select#layoutModeSelect:focus{outline:none;border-color:var(--green-600);box-shadow:0 0 0 3px rgba(47,152,115,.14);}
+  .layout-foot{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;}
   .layout-result{
     font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--green-700);
     background:rgba(47,152,115,.08);
     border-radius:7px;
     padding:4px 9px;
-    align-self:flex-start;
+    white-space:nowrap;
   }
+  .layout-note{
+    font-size:11.5px;font-weight:600;color:#8a806b;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+
+  /* Color mode toggle (Warna / Hitam Putih) — segmented button pair,
+     matches the height & visual weight of the selects beside it. Label
+     selalu ditampilkan penuh (min-width per tombol dijaga) supaya "Warna"
+     & "Hitam Putih" gak pernah kepotong/numpuk sama ikonnya. */
+  .color-mode-wrap{display:flex;flex-direction:column;gap:8px;min-width:0;}
+  .color-mode-toggle{
+    display:flex;height:38px;
+    border:1.5px solid var(--line);border-radius:9px;
+    overflow:hidden;background:#fbfaf6;
+  }
+  .cm-btn{
+    flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:6px;
+    border:none;background:transparent;color:#8a806b;
+    font-family:var(--mono);font-size:11.5px;font-weight:700;
+    cursor:pointer;transition:.15s;
+    padding:0 8px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .cm-btn svg{width:13px;height:13px;flex-shrink:0;}
+  .cm-btn:not(.active):hover{background:#f2efe4;color:var(--ink);}
+  .cm-btn.active{background:var(--green-700);color:#fff;}
+  .cm-btn + .cm-btn{border-left:1.5px solid var(--line);}
+  .cm-btn.active + .cm-btn, .cm-btn.active{border-left-color:transparent;}
 
   /* ============ Zoom preview modal (tap kartu) ============ */
   .zoom-modal{max-width:600px;}
@@ -429,6 +481,27 @@
   }
   .modal h3{margin:0 0 4px;font-size:17px;font-weight:800;letter-spacing:-.2px;}
   .modal p.hint{margin:0 0 16px;font-size:12.5px;color:var(--ink-soft);line-height:1.5;}
+
+  /* Print preview summary strip — ringkasan kertas/layout/warna yg AKAN
+     dicetak, ditampilkan sbg baris chip data (bukan kalimat statis),
+     supaya user bisa cek ulang pengaturan sebelum benar2 cetak PDF. */
+  .preview-summary{
+    display:flex;flex-wrap:wrap;align-items:center;gap:7px;
+    margin:0 0 16px;
+  }
+  .preview-summary .chip{
+    display:inline-flex;align-items:center;gap:5px;
+    font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--green-800);
+    background:rgba(47,152,115,.09);
+    border:1px solid rgba(47,152,115,.16);
+    border-radius:7px;
+    padding:5px 10px;
+    white-space:nowrap;
+  }
+  .preview-summary .chip svg{width:12px;height:12px;flex-shrink:0;stroke:var(--green-700);}
+  .preview-summary .chip.chip-note{
+    color:var(--ink-soft);background:#f2efe4;border-color:var(--line);font-weight:600;
+  }
   .crop-modal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-right:34px;}
   .crop-progress{
     font-family:var(--mono);font-size:11.5px;font-weight:700;color:#fff;
@@ -629,40 +702,62 @@
     </div>
     <div class="print-bar">
       <div class="specs">
+
         <div class="spec card-size-wrap">
           <span class="k">Ukuran Gambar KTP</span>
           <div class="card-size-inputs">
             <div class="dim-field">
-              <input type="number" id="cardWInput" value="13.5" min="1" max="50" step="0.1" inputmode="decimal">
+              <input type="number" id="cardWInput" value="13.5" min="1" max="50" step="0.1" inputmode="decimal" title="Lebar gambar KTP (cm)">
               <span class="unit">cm</span>
             </div>
             <span class="dim-x">×</span>
             <div class="dim-field">
-              <input type="number" id="cardHInput" value="9" min="1" max="50" step="0.1" inputmode="decimal">
+              <input type="number" id="cardHInput" value="9" min="1" max="50" step="0.1" inputmode="decimal" title="Tinggi gambar KTP (cm)">
               <span class="unit">cm</span>
             </div>
             <button type="button" class="dim-reset" id="btnResetCardSize" title="Kembalikan ke ukuran KTP asli (13.5 × 9 cm)">↺</button>
           </div>
         </div>
+
         <div class="spec paper-select-wrap">
           <span class="k">Ukuran Kertas</span>
           <div class="select-shell">
             <select id="paperSelect"></select>
           </div>
         </div>
+
         <div class="spec layout-select-wrap">
           <span class="k">Layout Kartu / Lembar</span>
           <div class="select-shell">
             <select id="layoutModeSelect"></select>
           </div>
-          <span class="layout-result" id="layoutInfo">2 kolom × 2 baris</span>
+          <div class="layout-foot">
+            <span class="layout-result" id="layoutInfo">2 kolom × 2 baris</span>
+            <span class="layout-note" title="Ada spasi kosong di bawah tiap foto untuk ditulis nomor HP pakai pulpen">✓ space No. HP di bawah foto</span>
+          </div>
         </div>
-        <div class="spec"><span class="k">Space No. HP</span><span class="v">✓ di samping foto</span></div>
+
+        <div class="spec color-mode-wrap">
+          <span class="k">Warna Cetak</span>
+          <div class="color-mode-toggle" id="colorModeToggle">
+            <button type="button" class="cm-btn active" data-mode="COLOR" title="Cetak berwarna (sesuai foto asli)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 011.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+              Warna
+            </button>
+            <button type="button" class="cm-btn" data-mode="BW" title="Cetak hitam putih (hemat tinta)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 000 20V2z" fill="currentColor" stroke="none"/></svg>
+              Hitam Putih
+            </button>
+          </div>
+        </div>
+
       </div>
-      <button class="btn btn-gold" id="btnPreview" disabled>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-        Lihat &amp; Cetak PDF
-      </button>
+      <div class="print-actions">
+        <button class="btn btn-gold" id="btnPreview" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          Lihat &amp; Cetak PDF
+        </button>
+      </div>
     </div>
   </div>
 
@@ -733,7 +828,7 @@
   <div class="modal preview-modal">
     <button class="modal-close" onclick="closePreviewModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
     <h3>Preview Cetak</h3>
-    <p class="hint">Setiap kartu diputar otomatis ke posisi berdiri saat dicetak, supaya kartu tersusun rapi per lembar — lengkap dengan space kosong untuk tulis nomor HP pakai pulpen.</p>
+    <div class="preview-summary" id="previewSummary"></div>
     <div class="sheet-wrap">
       <canvas id="sheetCanvas"></canvas>
     </div>

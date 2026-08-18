@@ -1,3 +1,875 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#0b3d2e">
+<title>Cetak KTP — CDN Tools</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#12241d;
+    --ink-soft:#5c6a62;
+    --paper:#f3f1ea;
+    --card:#ffffff;
+    --green-950:#0a2e23;
+    --green-900:#0d3a2c;
+    --green-800:#124a38;
+    --green-700:#1a6349;
+    --green-600:#1f7a58;
+    --green-500:#2f9873;
+    --gold:#c9973e;
+    --gold-deep:#a97a2c;
+    --line:#e4e0d3;
+    --line-soft:#edeae0;
+    --danger:#c04a35;
+    --shadow-sm:0 1px 3px rgba(15,40,30,.06), 0 1px 2px rgba(15,40,30,.04);
+    --shadow-md:0 4px 16px rgba(15,40,30,.08), 0 2px 6px rgba(15,40,30,.05);
+    --shadow-lg:0 20px 50px rgba(9,30,22,.18), 0 6px 18px rgba(9,30,22,.10);
+    --radius-lg:20px;
+    --radius-md:14px;
+    --radius-sm:10px;
+    --mono:'JetBrains Mono','SFMono-Regular',Consolas,monospace;
+    --sans:'Inter',-apple-system,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html{-webkit-tap-highlight-color:transparent;}
+  body{
+    margin:0;
+    font-family:var(--sans);
+    background:
+      radial-gradient(1100px 480px at 12% -8%, rgba(31,122,88,.10), transparent 60%),
+      radial-gradient(900px 420px at 100% 0%, rgba(201,151,62,.10), transparent 55%),
+      var(--paper);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  ::selection{background:var(--gold);color:#fff;}
+
+  /* ============ Topbar ============ */
+  header.top{
+    position:sticky;top:0;z-index:40;
+    background:linear-gradient(135deg,var(--green-950),var(--green-800) 70%,var(--green-700));
+    color:#f4f1e6;
+    padding:16px 20px;
+    display:flex;align-items:center;justify-content:space-between;
+    box-shadow:0 6px 24px rgba(9,30,22,.28);
+  }
+  header.top .brand{display:flex;align-items:center;gap:12px;min-width:0;}
+  header.top .mark{
+    width:38px;height:38px;border-radius:11px;
+    background:linear-gradient(135deg,var(--gold),var(--gold-deep));
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-weight:700;font-size:13px;color:#211405;
+    flex-shrink:0;
+    box-shadow:0 3px 10px rgba(169,122,44,.4), inset 0 1px 0 rgba(255,255,255,.35);
+  }
+  header.top .txt{min-width:0;}
+  header.top h1{font-size:15.5px;margin:0;font-weight:700;letter-spacing:.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  header.top p{margin:1px 0 0;font-size:11px;opacity:.62;font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  header.top .count{
+    font-family:var(--mono);font-size:12px;font-weight:600;
+    background:rgba(255,255,255,.09);
+    padding:7px 14px;border-radius:24px;
+    border:1px solid rgba(255,255,255,.14);
+    flex-shrink:0;
+    backdrop-filter:blur(6px);
+  }
+
+  main{max-width:1180px;margin:0 auto;padding:24px 16px 110px;}
+
+  /* ============ Drop zone ============ */
+  .dropzone{
+    border:1.5px dashed #c7bf9f;
+    border-radius:var(--radius-lg);
+    background:linear-gradient(180deg,#ffffff, #fdfcf8);
+    padding:40px 24px;
+    text-align:center;
+    cursor:pointer;
+    transition:.2s;
+    position:relative;
+    box-shadow:var(--shadow-sm);
+  }
+  .dropzone.drag{border-color:var(--green-600);background:#eef8f2;box-shadow:0 0 0 4px rgba(47,152,115,.12), var(--shadow-md);}
+  .dropzone .icon{
+    width:58px;height:58px;margin:0 auto 14px;
+    border-radius:50%;
+    background:linear-gradient(135deg,var(--green-800),var(--green-600));
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 18px rgba(18,74,56,.28);
+  }
+  .dropzone .icon svg{width:26px;height:26px;stroke:#f4f1e6;}
+  .dropzone h2{font-size:17px;margin:0 0 5px;font-weight:700;letter-spacing:-.1px;}
+  .dropzone p{font-size:13px;color:var(--ink-soft);margin:0;}
+  .dropzone input{display:none;}
+  .dz-actions{display:flex;gap:10px;justify-content:center;margin-top:18px;flex-wrap:wrap;}
+
+  .btn{
+    font-family:var(--sans);
+    border:none;border-radius:11px;
+    padding:11px 20px;
+    font-size:13.5px;font-weight:600;
+    cursor:pointer;
+    display:inline-flex;align-items:center;gap:8px;
+    transition:.16s cubic-bezier(.4,0,.2,1);
+    letter-spacing:.1px;
+  }
+  .btn-primary{background:linear-gradient(135deg,var(--green-700),var(--green-600));color:#fff;box-shadow:0 4px 14px rgba(26,99,73,.3), inset 0 1px 0 rgba(255,255,255,.12);}
+  .btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(26,99,73,.38), inset 0 1px 0 rgba(255,255,255,.12);}
+  .btn-primary:active{transform:translateY(0);}
+  .btn-ghost{background:#fff;color:var(--green-800);border:1.5px solid var(--line);}
+  .btn-ghost:hover{border-color:var(--green-600);background:#f7faf8;}
+  .btn-gold{background:linear-gradient(135deg,var(--gold),var(--gold-deep));color:#241804;box-shadow:0 4px 14px rgba(169,122,44,.35), inset 0 1px 0 rgba(255,255,255,.3);}
+  .btn-gold:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(169,122,44,.42), inset 0 1px 0 rgba(255,255,255,.3);}
+  .btn-gold:active{transform:translateY(0);}
+  .btn:disabled{opacity:.4;cursor:not-allowed;transform:none !important;box-shadow:none !important;}
+  .btn svg{width:15px;height:15px;flex-shrink:0;}
+
+  /* ============ Section headers ============ */
+  .sect{margin-top:36px;}
+  .sect-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;}
+  .sect-head h3{font-size:13px;margin:0;text-transform:uppercase;letter-spacing:.8px;color:var(--green-800);font-weight:800;}
+  .sect-head .sub{font-size:12px;color:#9a8f75;font-family:var(--mono);}
+
+  /* ============ Cards grid ============ */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;}
+  .kcard{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:var(--radius-md);
+    overflow:hidden;
+    display:flex;flex-direction:column;
+    box-shadow:var(--shadow-sm);
+    transition:.18s;
+  }
+  .kcard:hover{box-shadow:var(--shadow-md);border-color:#d8d2bd;}
+
+  /* Thumbnail proporsional & mudah dibaca. Hasil crop internal selalu
+     tersimpan landscape 13.5:9 (supaya layout cetak PDF 2x2 muat rapi),
+     tapi KTP FISIK aslinya berdiri (9:13.5) — jadi khusus utk PREVIEW di
+     UI (thumbnail & zoom), gambar diputar visual -90° biar user melihat
+     kartu tegak & teks terbaca normal, bukan tidur ke samping. Data asli
+     & hasil cetak PDF sama sekali tidak berubah, murni tampilan CSS. */
+  .kcard .thumb{
+    aspect-ratio:1.5/1;
+    background:linear-gradient(155deg,#eef1ec,#e2e6dd);
+    display:flex;align-items:center;justify-content:center;
+    position:relative;
+    overflow:hidden;
+    padding:10px;
+    cursor:zoom-in;
+  }
+  .kcard .thumb.thumb-ready{
+    aspect-ratio:9/13.5;
+    background:linear-gradient(155deg,#e9ede7,#dde2d6);
+  }
+  .kcard .thumb .frame{
+    width:100%;height:100%;
+    border-radius:8px;
+    overflow:hidden;
+    background:#fff;
+    box-shadow:0 2px 10px rgba(15,40,30,.12), 0 0 0 1px rgba(15,40,30,.06);
+    display:flex;align-items:center;justify-content:center;
+    position:relative;
+    transition:transform .18s;
+  }
+  .kcard .thumb:hover .frame{transform:scale(1.015);}
+  .kcard .thumb.thumb-raw img{
+    width:100%;height:100%;
+    object-fit:contain;
+    display:block;
+  }
+  /* Kartu sudah di-crop: gambar aslinya landscape (1.5:1), frame-nya
+     portrait (9:13.5). Wrapper .rot90 dibuat dengan ukuran PRA-rotasi
+     (aspect-ratio 1.5:1, mengisi tinggi frame) lalu diputar -90° di
+     tengah frame — hasilnya wrapper (dan img di dalamnya, object-fit
+     contain normal) pas mengisi frame portrait tanpa distorsi/terpotong. */
+  .kcard .thumb.thumb-ready .frame{overflow:visible;}
+  .kcard .thumb .rot90{
+    position:absolute;
+    top:50%;left:50%;
+    height:100%;width:calc(100% * (13.5/9));
+    aspect-ratio:1.5/1;
+    transform:translate(-50%,-50%) rotate(-90deg);
+    overflow:hidden;
+    border-radius:8px;
+  }
+  .kcard .thumb .rot90 img{
+    width:100%;height:100%;
+    object-fit:contain;
+    display:block;
+  }
+  .kcard .thumb .zoom-hint{
+    position:absolute;bottom:8px;right:8px;
+    width:26px;height:26px;border-radius:50%;
+    background:rgba(10,25,18,.55);
+    backdrop-filter:blur(4px);
+    display:flex;align-items:center;justify-content:center;
+    opacity:0;transition:.15s;
+    pointer-events:none;
+    z-index:2;
+  }
+  .kcard .thumb:hover .zoom-hint{opacity:1;}
+  .kcard .thumb .zoom-hint svg{width:13px;height:13px;stroke:#fff;}
+  .kcard .thumb .status{
+    position:absolute;top:9px;left:9px;
+    font-family:var(--mono);font-size:9.5px;font-weight:700;
+    padding:4px 9px;border-radius:20px;
+    text-transform:uppercase;letter-spacing:.5px;
+    box-shadow:0 2px 6px rgba(0,0,0,.18);
+    z-index:2;
+  }
+  .status.raw{background:rgba(30,30,30,.85);color:#fff;backdrop-filter:blur(4px);}
+  .status.cropped{background:var(--green-600);color:#fff;}
+  .status.enhanced{background:var(--gold);color:#241804;}
+
+  .kcard .body{padding:12px 13px 13px;display:flex;flex-direction:column;gap:9px;flex:1;}
+  .kcard .actions{display:flex;gap:6px;margin-top:auto;flex-wrap:wrap;}
+  .icnbtn{
+    flex:1 1 auto;
+    min-width:44px;
+    border:1px solid var(--line);background:#fff;border-radius:9px;
+    padding:7px 3px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    cursor:pointer;transition:.15s;
+  }
+  .icnbtn svg{width:13.5px;height:13.5px;stroke:var(--green-800);flex-shrink:0;}
+  .icnbtn span{font-size:9px;font-weight:600;color:var(--green-800);letter-spacing:.1px;white-space:nowrap;}
+  .icnbtn:hover{background:#f2efe0;border-color:#d8d2bd;transform:translateY(-1px);}
+  .icnbtn.danger svg{stroke:var(--danger);}
+  .icnbtn.danger span{color:var(--danger);}
+  .icnbtn:disabled{opacity:.35;cursor:not-allowed;transform:none;}
+  .spin{animation:spin .8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+
+  /* ============ Empty state ============ */
+  .empty{
+    text-align:center;padding:52px 20px;color:#a89d80;
+    font-size:13px;font-family:var(--mono);
+    background:#fff;border:1px dashed var(--line);border-radius:var(--radius-md);
+  }
+
+  /* ============ Print settings bar ============ */
+  .print-bar{
+    background:linear-gradient(180deg,#ffffff,#fdfcf7);
+    border:1px solid var(--line);
+    border-radius:var(--radius-lg);
+    padding:24px 26px;
+    box-shadow:var(--shadow-sm);
+  }
+  /* 2×2 grid dengan lebar tetap (bukan auto-fit) supaya tiap kolom selalu
+     dapat ruang cukup & gak pernah kepotong/mepet — "Space No. HP" digabung
+     jadi catatan kecil di bawah Layout (bukan spec terpisah), jadi cuma 4
+     kontrol inti yang perlu ditata: rapi jadi 2 baris x 2 kolom. */
+  .print-bar .specs{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:22px 28px;
+  }
+  @media (max-width:640px){
+    .print-bar .specs{grid-template-columns:1fr;gap:20px;}
+  }
+  .spec{display:flex;flex-direction:column;gap:8px;min-width:0;}
+  .spec .k{
+    font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;
+    color:#8a806b;font-family:var(--mono);font-weight:700;
+  }
+  .spec .v{font-size:13.5px;font-weight:700;color:var(--ink);font-family:var(--mono);height:38px;display:flex;align-items:center;}
+  .print-bar .print-actions{
+    display:flex;justify-content:flex-end;
+    margin-top:24px;padding-top:22px;
+    border-top:1px solid var(--line);
+  }
+  .print-bar .print-actions .btn{min-width:220px;justify-content:center;}
+  @media (max-width:640px){
+    .print-bar .print-actions{justify-content:stretch;}
+    .print-bar .print-actions .btn{width:100%;}
+  }
+
+  /* Ukuran gambar KTP — dua input angka (lebar x tinggi cm) editable,
+     default 13.5x9cm (ukuran fisik KTP asli), gaya visual disamakan
+     dengan select#paperSelect di sebelahnya. min-width dijaga cukup
+     lebar supaya angka desimal (mis. "13.5") gak pernah kepotong. */
+  .card-size-wrap{display:flex;flex-direction:column;gap:8px;min-width:0;}
+  .card-size-inputs{display:flex;align-items:center;gap:8px;height:38px;}
+  .dim-field{
+    position:relative;display:flex;align-items:center;flex:1 1 0;min-width:64px;
+  }
+  .dim-field input[type=number]{
+    appearance:none;-webkit-appearance:none;-moz-appearance:textfield;
+    font-family:var(--mono);
+    font-size:13px;font-weight:700;color:var(--ink);
+    background:#fbfaf6;
+    border:1.5px solid var(--line);
+    border-radius:9px;
+    padding:0 28px 0 10px;
+    height:38px;width:100%;min-width:0;
+    transition:.15s;
+  }
+  .dim-field input[type=number]::-webkit-outer-spin-button,
+  .dim-field input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+  .dim-field input[type=number]:hover{border-color:#cfc7ac;}
+  .dim-field input[type=number]:focus{outline:none;border-color:var(--green-600);box-shadow:0 0 0 3px rgba(47,152,115,.14);}
+  .dim-field .unit{
+    position:absolute;right:9px;top:50%;transform:translateY(-50%);
+    font-family:var(--mono);font-size:10px;font-weight:700;color:#a89d80;
+    pointer-events:none;
+  }
+  .dim-x{font-family:var(--mono);font-size:12px;font-weight:700;color:#a89d80;flex-shrink:0;}
+  .dim-reset{
+    flex-shrink:0;width:38px;height:38px;border-radius:9px;
+    border:1.5px solid var(--line);background:#fff;color:var(--green-800);
+    font-size:14px;cursor:pointer;transition:.15s;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .dim-reset:hover{border-color:var(--green-600);background:#eef8f2;}
+  .dim-reset:active{transform:scale(.92);}
+
+  /* Paper size select — custom native select styled premium, with full
+     catalog like Word/Windows print dialog (grouped by kategori). Text
+     dikasih text-overflow:ellipsis sbg jaring pengaman kalau ada opsi
+     yang tetap kepanjangan, jadi ga pernah kepotong mendadak/mentah. */
+  .paper-select-wrap{display:flex;flex-direction:column;gap:8px;position:relative;}
+  .select-shell{position:relative;height:38px;display:flex;align-items:center;}
+  select#paperSelect{
+    appearance:none;-webkit-appearance:none;
+    font-family:var(--mono);
+    font-size:12.5px;font-weight:700;color:var(--ink);
+    background:#fbfaf6;
+    border:1.5px solid var(--line);
+    border-radius:9px;
+    padding:0 34px 0 12px;
+    height:38px;width:100%;
+    cursor:pointer;
+    min-width:0;
+    text-overflow:ellipsis;
+    transition:.15s;
+  }
+  select#paperSelect:hover{border-color:#cfc7ac;}
+  select#paperSelect:focus{outline:none;border-color:var(--green-600);box-shadow:0 0 0 3px rgba(47,152,115,.14);}
+  .select-shell::after{
+    content:'';
+    position:absolute;right:12px;top:50%;
+    width:9px;height:9px;
+    border-right:2px solid var(--green-700);border-bottom:2px solid var(--green-700);
+    transform:translateY(-65%) rotate(45deg);
+    pointer-events:none;
+  }
+
+  /* Layout kolom x baris select — sama style dgn paper-select, plus footer
+     kecil di bawahnya: badge hasil hitungan (mis. "2 kolom × 2 baris") +
+     catatan singkat soal space No. HP (digabung ke sini, bukan spec
+     terpisah, supaya panel lebih ringkas & gak ada kolom "kosong"). */
+  .layout-select-wrap{display:flex;flex-direction:column;gap:8px;position:relative;min-width:0;}
+  select#layoutModeSelect{
+    appearance:none;-webkit-appearance:none;
+    font-family:var(--mono);
+    font-size:12.5px;font-weight:700;color:var(--ink);
+    background:#fbfaf6;
+    border:1.5px solid var(--line);
+    border-radius:9px;
+    padding:0 34px 0 12px;
+    height:38px;width:100%;
+    cursor:pointer;
+    min-width:0;
+    text-overflow:ellipsis;
+    transition:.15s;
+  }
+  select#layoutModeSelect:hover{border-color:#cfc7ac;}
+  select#layoutModeSelect:focus{outline:none;border-color:var(--green-600);box-shadow:0 0 0 3px rgba(47,152,115,.14);}
+  .layout-foot{display:flex;align-items:center;flex-wrap:wrap;gap:8px 10px;}
+  .layout-result{
+    font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--green-700);
+    background:rgba(47,152,115,.08);
+    border-radius:7px;
+    padding:4px 9px;
+    white-space:nowrap;
+  }
+  .layout-note{
+    font-size:11.5px;font-weight:600;color:#8a806b;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+
+  /* Color mode toggle (Warna / Hitam Putih) — segmented button pair,
+     matches the height & visual weight of the selects beside it. Label
+     selalu ditampilkan penuh (min-width per tombol dijaga) supaya "Warna"
+     & "Hitam Putih" gak pernah kepotong/numpuk sama ikonnya. */
+  .color-mode-wrap{display:flex;flex-direction:column;gap:8px;min-width:0;}
+  .color-mode-toggle{
+    display:flex;height:38px;
+    border:1.5px solid var(--line);border-radius:9px;
+    overflow:hidden;background:#fbfaf6;
+  }
+  .cm-btn{
+    flex:1;min-width:0;display:flex;align-items:center;justify-content:center;gap:6px;
+    border:none;background:transparent;color:#8a806b;
+    font-family:var(--mono);font-size:11.5px;font-weight:700;
+    cursor:pointer;transition:.15s;
+    padding:0 8px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .cm-btn svg{width:13px;height:13px;flex-shrink:0;}
+  .cm-btn:not(.active):hover{background:#f2efe4;color:var(--ink);}
+  .cm-btn.active{background:var(--green-700);color:#fff;}
+  .cm-btn + .cm-btn{border-left:1.5px solid var(--line);}
+  .cm-btn.active + .cm-btn, .cm-btn.active{border-left-color:transparent;}
+
+  /* ============ Zoom preview modal (tap kartu) ============ */
+  .zoom-modal{max-width:600px;}
+  .zoom-stage{
+    background:linear-gradient(155deg,#eef1ec,#e2e6dd);
+    border-radius:14px;
+    padding:24px;
+    display:flex;align-items:center;justify-content:center;
+    height:60vh;
+    max-height:600px;
+    overflow:hidden;
+  }
+  .zoom-stage img{
+    display:block;
+    max-width:100%;max-height:100%;
+    width:auto;height:auto;
+    border-radius:8px;
+    box-shadow:0 8px 28px rgba(15,40,30,.22), 0 0 0 1px rgba(15,40,30,.06);
+    object-fit:contain;
+  }
+  /* Hasil crop tersimpan landscape (13.5:9) tapi KTP fisik berdiri —
+     dibungkus wrapper portrait (9:13.5) yang dibatasi tinggi stage,
+     gambar di dalamnya diputar -90° & object-fit:contain relatif ke
+     wrapper. Ini menjamin proporsi selalu pas, tidak pernah meluber
+     atau terpotong, terlepas dari ukuran viewport. */
+  .zoom-stage .rot90-wrap{
+    position:relative;
+    height:100%;
+    aspect-ratio:9/13.5;
+    max-width:100%;
+    border-radius:8px;
+    overflow:hidden;
+    box-shadow:0 8px 28px rgba(15,40,30,.22), 0 0 0 1px rgba(15,40,30,.06);
+  }
+  .zoom-stage .rot90-wrap img{
+    position:absolute;
+    top:50%;left:50%;
+    width:calc(100% * (13.5/9));
+    height:100%;
+    max-width:none;max-height:none;
+    transform:translate(-50%,-50%) rotate(-90deg);
+    object-fit:contain;
+    box-shadow:none;
+    border-radius:0;
+  }
+
+  /* ============ Modal / crop editor ============ */
+  .modal-backdrop{
+    position:fixed;inset:0;background:rgba(8,16,12,.72);
+    z-index:100;display:flex;align-items:center;justify-content:center;
+    padding:16px;
+    backdrop-filter:blur(3px);
+  }
+  .modal{
+    background:var(--paper);
+    border-radius:22px;
+    width:100%;max-width:720px;
+    max-height:92vh;
+    overflow:auto;
+    padding:22px;
+    box-shadow:var(--shadow-lg);
+    position:relative;
+  }
+  .modal h3{margin:0 0 4px;font-size:17px;font-weight:800;letter-spacing:-.2px;}
+  .modal p.hint{margin:0 0 16px;font-size:12.5px;color:var(--ink-soft);line-height:1.5;}
+
+  /* Print preview summary strip — ringkasan kertas/layout/warna yg AKAN
+     dicetak, ditampilkan sbg baris chip data (bukan kalimat statis),
+     supaya user bisa cek ulang pengaturan sebelum benar2 cetak PDF. */
+  .preview-summary{
+    display:flex;flex-wrap:wrap;align-items:center;gap:7px;
+    margin:0 0 16px;
+  }
+  .preview-summary .chip{
+    display:inline-flex;align-items:center;gap:5px;
+    font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--green-800);
+    background:rgba(47,152,115,.09);
+    border:1px solid rgba(47,152,115,.16);
+    border-radius:7px;
+    padding:5px 10px;
+    white-space:nowrap;
+  }
+  .preview-summary .chip svg{width:12px;height:12px;flex-shrink:0;stroke:var(--green-700);}
+  .preview-summary .chip.chip-note{
+    color:var(--ink-soft);background:#f2efe4;border-color:var(--line);font-weight:600;
+  }
+  .crop-modal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-right:34px;}
+  .crop-progress{
+    font-family:var(--mono);font-size:11.5px;font-weight:700;color:#fff;
+    background:var(--green-600);padding:5px 12px;border-radius:20px;
+    flex-shrink:0;white-space:nowrap;
+  }
+  .crop-stage{
+    position:relative;
+    background:#141b17;
+    border-radius:14px;
+    overflow:auto;
+    touch-action:pan-x pan-y;
+    user-select:none;
+    height:58vh;
+    max-height:58vh;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.05);
+  }
+  .crop-stage.zoomed{
+    display:block;
+  }
+  /* Ukuran canvas SELALU diatur eksplisit lewat JS (style.width/height
+     dalam px), bukan lewat max-width/height:auto — supaya kotak layout
+     elemen ini ikut mengecil/membesar persis sesuai zoom level, nggak
+     nyisain ruang kosong kayak pendekatan transform:scale sebelumnya. */
+  .crop-stage canvas{display:block;flex-shrink:0;}
+  .zoom-row{
+    display:flex;align-items:center;gap:12px;
+    margin-top:10px;
+    background:#fff;border:1px solid var(--line);border-radius:12px;
+    padding:12px 14px;
+    flex-wrap:wrap;
+    box-shadow:var(--shadow-sm);
+  }
+  .zoom-row .txt{flex:1;min-width:150px;}
+  .zoom-row .txt b{display:block;font-size:12.5px;color:var(--ink);}
+  .zoom-row .txt span{font-size:11px;color:var(--ink-soft);}
+  .zoom-btns{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+  .zoombtn{
+    width:42px;height:42px;border-radius:10px;
+    border:1.5px solid var(--line);background:#fff;
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;transition:.15s;flex-shrink:0;
+  }
+  .zoombtn:hover{border-color:var(--green-600);background:#eef8f2;}
+  .zoombtn:active{transform:scale(.94);}
+  .zoombtn svg{width:19px;height:19px;stroke:var(--green-800);}
+  .zoombtn:disabled{opacity:.35;cursor:not-allowed;transform:none;}
+  .zoom-pct{
+    font-family:var(--mono);font-size:12px;font-weight:700;color:var(--green-800);
+    min-width:44px;text-align:center;user-select:none;
+  }
+  .crop-controls{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;}
+  .crop-controls .btn{flex:1;justify-content:center;min-width:120px;}
+  .modal-close{
+    position:absolute;top:16px;right:16px;
+    width:32px;height:32px;border-radius:50%;
+    background:rgba(0,0,0,.06);border:none;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:.15s;
+    z-index:2;
+  }
+  .modal-close:hover{background:rgba(0,0,0,.11);}
+  .modal-close svg{width:16px;height:16px;}
+
+  /* ============ Preview modal (print layout) ============ */
+  .preview-modal{max-width:640px;}
+  .sheet-wrap{
+    background:linear-gradient(180deg,#20261f,#171b16);
+    border-radius:14px;
+    padding:20px;
+    display:flex;justify-content:center;align-items:flex-start;overflow:auto;
+    max-height:70vh;
+  }
+  #sheetCanvas{
+    background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.45);
+    max-width:100%;height:auto;display:block;
+    border-radius:2px;
+  }
+  .preview-meta{
+    display:flex;align-items:center;justify-content:space-between;
+    margin:12px 2px 0;flex-wrap:wrap;gap:8px;
+  }
+  .preview-meta .pg-nav{display:flex;align-items:center;gap:8px;}
+  .preview-meta .pg-nav button{
+    width:32px;height:32px;border-radius:9px;
+    border:1.5px solid var(--line);background:#fff;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    transition:.15s;
+  }
+  .preview-meta .pg-nav button:hover:not(:disabled){border-color:var(--green-600);}
+  .preview-meta .pg-nav button:disabled{opacity:.35;cursor:not-allowed;}
+  .preview-meta .pg-nav button svg{width:15px;height:15px;stroke:var(--green-800);}
+  .preview-meta .pg-label{font-family:var(--mono);font-size:12px;color:var(--ink-soft);font-weight:600;}
+
+  /* ============ Toast ============ */
+  .toast{
+    position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+    background:var(--green-950);color:#f4f1e6;
+    padding:12px 22px;border-radius:12px;
+    font-size:13px;font-weight:500;z-index:200;
+    box-shadow:0 10px 30px rgba(0,0,0,.35);
+    opacity:0;pointer-events:none;transition:.28s cubic-bezier(.4,0,.2,1);
+    max-width:90vw;text-align:center;
+  }
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
+
+  /* ============ Bottom action bar (mobile) ============ */
+  .fab-bar{
+    position:fixed;bottom:0;left:0;right:0;
+    background:rgba(255,255,255,.92);
+    backdrop-filter:blur(12px);
+    border-top:1px solid var(--line);
+    padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+    display:flex;gap:10px;z-index:30;
+    box-shadow:0 -8px 24px rgba(0,0,0,.06);
+  }
+  .fab-bar .btn{flex:1;justify-content:center;padding:13px;font-size:14px;}
+
+  @media (min-width:720px){
+    .fab-bar{display:none;}
+    main{padding-bottom:60px;}
+  }
+
+  .progress-mini{
+    font-family:var(--mono);font-size:10.5px;color:var(--ink-soft);
+    display:flex;align-items:center;gap:6px;
+  }
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--gold);animation:pulse 1.1s infinite;}
+  @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
+
+  /* ============ Rotate 90° buttons in crop modal ============ */
+  .rotate-row{
+    display:flex;align-items:center;gap:12px;
+    margin-top:16px;
+    background:#fff;border:1px solid var(--line);border-radius:12px;
+    padding:12px 14px;
+    flex-wrap:wrap;
+    box-shadow:var(--shadow-sm);
+  }
+  .rotate-row .txt{flex:1;min-width:150px;}
+  .rotate-row .txt b{display:block;font-size:12.5px;color:var(--ink);}
+  .rotate-row .txt span{font-size:11px;color:var(--ink-soft);}
+  .rotate-btns{display:flex;gap:8px;}
+  .rotbtn{
+    width:42px;height:42px;border-radius:10px;
+    border:1.5px solid var(--line);background:#fff;
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;transition:.15s;flex-shrink:0;
+  }
+  .rotbtn:hover{border-color:var(--green-600);background:#eef8f2;}
+  .rotbtn:active{transform:scale(.94);}
+  .rotbtn svg{width:19px;height:19px;stroke:var(--green-800);}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <div class="mark">KTP</div>
+    <div class="txt">
+      <h1>Cetak KTP Generator</h1>
+      <p>CDN Internal Tools</p>
+    </div>
+  </div>
+  <div class="count" id="headerCount">0 kartu</div>
+</header>
+
+<main>
+
+  <div class="dropzone" id="dropzone">
+    <div class="icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M12 4l-4 4M12 4l4 4"/><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3"/></svg>
+    </div>
+    <h2>Upload Foto KTP</h2>
+    <p>Tarik file ke sini, atau pilih dari galeri — bisa banyak sekaligus</p>
+    <div class="dz-actions" onclick="event.stopPropagation()">
+      <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="M21 15l-5-5L5 21"/></svg>
+        Pilih dari Galeri
+      </button>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" multiple>
+  </div>
+
+  <div class="sect">
+    <div class="sect-head">
+      <h3>Daftar KTP</h3>
+      <span class="sub" id="listSub">belum ada data</span>
+    </div>
+    <div class="grid" id="cardGrid"></div>
+    <div class="empty" id="emptyState">— upload foto KTP untuk mulai —</div>
+  </div>
+
+  <div class="sect">
+    <div class="sect-head">
+      <h3>Pengaturan Cetak</h3>
+    </div>
+    <div class="print-bar">
+      <div class="specs">
+
+        <div class="spec card-size-wrap">
+          <span class="k">Ukuran Gambar KTP</span>
+          <div class="card-size-inputs">
+            <div class="dim-field">
+              <input type="number" id="cardWInput" value="13.5" min="1" max="50" step="0.1" inputmode="decimal" title="Lebar gambar KTP (cm)">
+              <span class="unit">cm</span>
+            </div>
+            <span class="dim-x">×</span>
+            <div class="dim-field">
+              <input type="number" id="cardHInput" value="9" min="1" max="50" step="0.1" inputmode="decimal" title="Tinggi gambar KTP (cm)">
+              <span class="unit">cm</span>
+            </div>
+            <button type="button" class="dim-reset" id="btnResetCardSize" title="Kembalikan ke ukuran KTP asli (13.5 × 9 cm)">↺</button>
+          </div>
+        </div>
+
+        <div class="spec paper-select-wrap">
+          <span class="k">Ukuran Kertas</span>
+          <div class="select-shell">
+            <select id="paperSelect"></select>
+          </div>
+        </div>
+
+        <div class="spec layout-select-wrap">
+          <span class="k">Layout Kartu / Lembar</span>
+          <div class="select-shell">
+            <select id="layoutModeSelect"></select>
+          </div>
+          <div class="layout-foot">
+            <span class="layout-result" id="layoutInfo">2 kolom × 2 baris</span>
+            <span class="layout-note" title="Ada spasi kosong di bawah tiap foto untuk ditulis nomor HP pakai pulpen">✓ space No. HP di bawah foto</span>
+          </div>
+        </div>
+
+        <div class="spec color-mode-wrap">
+          <span class="k">Warna Cetak</span>
+          <div class="color-mode-toggle" id="colorModeToggle">
+            <button type="button" class="cm-btn active" data-mode="COLOR" title="Cetak berwarna (sesuai foto asli)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 011.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+              Warna
+            </button>
+            <button type="button" class="cm-btn" data-mode="BW" title="Cetak hitam putih (hemat tinta)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 000 20V2z" fill="currentColor" stroke="none"/></svg>
+              Hitam Putih
+            </button>
+          </div>
+        </div>
+
+      </div>
+      <div class="print-actions">
+        <button class="btn btn-gold" id="btnPreview" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          Lihat &amp; Cetak PDF
+        </button>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<div class="fab-bar">
+  <button class="btn btn-ghost" onclick="document.getElementById('fileInput').click()">+ Tambah KTP</button>
+  <button class="btn btn-gold" id="btnPreviewMobile" disabled>Cetak PDF</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Crop Editor Modal -->
+<div class="modal-backdrop" id="cropModal" style="display:none;">
+  <div class="modal">
+    <button class="modal-close" onclick="closeCropModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    <div class="crop-modal-head">
+      <h3>Atur Crop KTP</h3>
+      <span class="crop-progress" id="cropProgress" style="display:none;"></span>
+    </div>
+    <p class="hint">Kotak hijau otomatis mendeteksi 4 sisi kartu &amp; meluruskan perspektif. Geser sudut kalau kurang pas, lalu simpan. Kalau upload banyak sekaligus, tiap foto dibuka bergiliran mulai dari yang pertama.</p>
+    <div class="crop-stage" id="cropStage">
+      <canvas id="cropCanvas"></canvas>
+    </div>
+    <p class="hint" style="margin-top:8px;font-size:11.5px;">Tips: perbesar dulu kalau mau geser sudut kotak hijau lebih presisi, lalu geser gambar dengan drag/scroll.</p>
+    <div class="zoom-row">
+      <div class="txt">
+        <b>Perbesar Tampilan</b>
+        <span>Zoom dulu supaya geser sudut kotak hijau lebih presisi.</span>
+      </div>
+      <div class="zoom-btns">
+        <button type="button" class="zoombtn" id="btnZoomOut" title="Perkecil">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M8 11h6"/></svg>
+        </button>
+        <span class="zoom-pct" id="zoomPct">100%</span>
+        <button type="button" class="zoombtn" id="btnZoomIn" title="Perbesar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/><path d="M11 8v6M8 11h6"/></svg>
+        </button>
+        <button type="button" class="zoombtn" id="btnZoomReset" title="Reset zoom">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="rotate-row">
+      <div class="txt">
+        <b>Putar Foto</b>
+        <span>Kalau hasil foto miring 90°/terbalik, putar dulu ke posisi yang benar sebelum crop.</span>
+      </div>
+      <div class="rotate-btns">
+        <button type="button" class="rotbtn" id="btnRotateLeft" title="Putar kiri 90°">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 015.5 5.5v0a5.5 5.5 0 01-5.5 5.5H11"/></svg>
+        </button>
+        <button type="button" class="rotbtn" id="btnRotateRight" title="Putar kanan 90°">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 004 14.5v0A5.5 5.5 0 009.5 20H13"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="crop-controls">
+      <button class="btn btn-ghost" onclick="autoDetectCrop()">↺ Deteksi Ulang</button>
+      <button class="btn btn-ghost" id="btnSkipCrop" onclick="closeCropModal()" style="display:none;">Lewati Foto Ini →</button>
+      <button class="btn btn-primary" onclick="saveCrop()">✓ Simpan Crop</button>
+    </div>
+  </div>
+</div>
+
+<!-- Print Preview Modal -->
+<div class="modal-backdrop" id="previewModal" style="display:none;">
+  <div class="modal preview-modal">
+    <button class="modal-close" onclick="closePreviewModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    <h3>Preview Cetak</h3>
+    <div class="preview-summary" id="previewSummary"></div>
+    <div class="sheet-wrap">
+      <canvas id="sheetCanvas"></canvas>
+    </div>
+    <div class="preview-meta">
+      <div class="pg-nav">
+        <button type="button" id="btnPrevPage" title="Halaman sebelumnya">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <span class="pg-label" id="pgLabel">Halaman 1/1</span>
+        <button type="button" id="btnNextPage" title="Halaman berikutnya">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="crop-controls">
+      <span class="progress-mini" id="pdfProgress" style="display:none;"><span class="dot"></span> Menyiapkan PDF...</span>
+      <button class="btn btn-ghost" onclick="closePreviewModal()">Tutup</button>
+      <button class="btn btn-gold" onclick="downloadPDF()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        Download PDF Siap Cetak
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Zoom Preview Modal (tap kartu utk lihat hasil crop besar) -->
+<div class="modal-backdrop" id="zoomModal" style="display:none;" onclick="if(event.target===this) closeZoomModal()">
+  <div class="modal zoom-modal">
+    <button class="modal-close" onclick="closeZoomModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    <h3>Preview Hasil Crop</h3>
+    <p class="hint" id="zoomStatusHint">Tampilan penuh kartu KTP sesuai hasil crop saat ini.</p>
+    <div class="zoom-stage">
+      <img id="zoomImage" src="" alt="Preview KTP besar" style="display:none;">
+      <div class="rot90-wrap" id="zoomRotWrap" style="display:none;">
+        <img id="zoomImageRot" src="" alt="Preview KTP besar">
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
 /* =========================================================
    Cetak KTP Generator — CDN Internal Tools
    - Auto-detect & crop tepi kartu KTP dari foto (deteksi kontur +
@@ -1524,3 +2396,7 @@ initLayoutModeSelect();
 initCardSizeInputs();
 initColorModeToggle();
 renderGrid();
+
+</script>
+</body>
+</html>
