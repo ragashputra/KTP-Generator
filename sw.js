@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cetak-ktp-v17'; // teks di bawah "Preview Cetak" diganti jadi baris chip ringkasan (jumlah kartu/lembar, ukuran kertas, layout kolom×baris, mode warna) yang otomatis ngikutin pengaturan aktif — lebih informatif & profesional drpd kalimat statis
+const CACHE_NAME = 'cetak-ktp-v18'; // rapikan spacing/rhythm di index.html (dropzone, section gap, print-bar, modal, crop/rotate row) pakai skala 4/8pt konsisten — tampilan lebih minimalis & proper, tanpa ubah warna/layout/fungsi
 const ASSETS = ['./index.html', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e=>{
