@@ -9,11 +9,23 @@
    ========================================================= */
 
 // ---------- Constants (real-world mm, converted at export time) ----------
-const CARD_W_CM = 13.5;   // sisi panjang KTP
-const CARD_H_CM = 9.0;    // sisi pendek KTP
-const MARGIN_MM = 6;
+// Ukuran gambar KTP hasil crop (cm) — bisa diubah user lewat input Lebar
+// & Tinggi di panel Pengaturan Cetak. Default 13.5x9cm = ukuran fisik KTP
+// asli, tapi disengaja bisa diubah utk kebutuhan lain (mis. mau dicetak
+// lebih besar/kecil dari ukuran asli).
+let CARD_W_CM = 13.5;   // sisi panjang KTP
+let CARD_H_CM = 9.0;    // sisi pendek KTP
+const DEFAULT_CARD_W_CM = 13.5, DEFAULT_CARD_H_CM = 9.0;
+const MARGIN_MM = 3; // margin tepi kertas atas/bawah/kiri/kanan — dibuat tipis (0.3cm) supaya lebih banyak kartu muat per lembar
 const GAP_MM = 5;
-const PHONE_SPACE_MM = 14; // ruang kosong bawah tiap kartu utk tulis no HP pakai pulpen
+const PHONE_SPACE_MM = 12; // lebar strip di SAMPING KANAN kartu (bukan di bawah lagi) utk tulis no HP pakai pulpen — tegak sejajar tinggi foto. Dijaga cukup kecil (1.2cm) supaya kartu ukuran KTP asli (13.5x9) tetap muat 2 kolom di F4 (total lebar 2x(9cm+1.2cm)+gap harus <= lebar kertas).
+
+// Layout kolom x baris cetak: "AUTO" = dihitung otomatis (maksimal muat
+// sesuai ukuran kertas & ukuran kartu), atau user bisa pilih manual
+// lewat dropdown (mis. 1x1 kalau mau 1 kartu besar penuh 1 halaman,
+// 2x3 kalau mau kartu lebih kecil tapi lebih banyak per lembar, dst).
+let layoutMode = 'AUTO';   // 'AUTO' | 'MANUAL'
+let manualCols = 2, manualRows = 2;
 
 // Ukuran kertas yang didukung (mm, portrait) — dikelompokkan seperti
 // dropdown ukuran kertas di Windows / Word / Excel. F4 = default
@@ -63,6 +75,8 @@ let idCounter = 0;
 let activeCropId = null;
 let cropQuad = null; // {tl,tr,br,bl} in canvas-space (working/downscaled space)
 let cropSourceCanvas = null;
+let cropZoom = 1; // 1 = fit-to-stage (100%); actual on-screen canvas size = baseFitSize * cropZoom
+let cropBaseFitW = 0, cropBaseFitH = 0; // canvas CSS size (px) at 100% zoom, i.e. fitted inside the stage
 
 // Antrian crop utk upload banyak sekaligus: foto dibuka satu per satu di
 // editor crop, URUT dari yang pertama diupload sampai yang terakhir,
@@ -99,6 +113,86 @@ function initPaperSelect(){
 }
 
 function paper(){ return PAPER_SIZES[currentPaperKey]; }
+
+// ---------- Layout kartu/lembar selector (Otomatis vs Manual kolom x baris) ----------
+// Preset manual yang ditawarkan mengikuti pola umum tata-letak cetak kartu
+// (mirip pilihan "kartu per lembar" di software label printing) — dari 1
+// kartu penuh 1 halaman (paling besar, mentok margin) sampai 3x4 (kartu
+// kecil, banyak per lembar).
+const LAYOUT_PRESETS = [
+  { key:'1x1', cols:1, rows:1, label:'1 kartu / lembar (penuh 1 halaman)' },
+  { key:'1x2', cols:1, rows:2, label:'2 kartu / lembar (1 kolom × 2 baris)' },
+  { key:'2x1', cols:2, rows:1, label:'2 kartu / lembar (2 kolom × 1 baris)' },
+  { key:'2x2', cols:2, rows:2, label:'4 kartu / lembar (2 kolom × 2 baris)' },
+  { key:'2x3', cols:2, rows:3, label:'6 kartu / lembar (2 kolom × 3 baris)' },
+  { key:'3x3', cols:3, rows:3, label:'9 kartu / lembar (3 kolom × 3 baris)' },
+  { key:'3x4', cols:3, rows:4, label:'12 kartu / lembar (3 kolom × 4 baris)' },
+];
+let selectedLayoutKey = 'AUTO';
+
+function initLayoutModeSelect(){
+  const sel = el('layoutModeSelect');
+  if(!sel) return;
+  const autoOpt = `<option value="AUTO" selected>Otomatis (maksimal muat, ukuran KTP asli)</option>`;
+  const manualOpts = LAYOUT_PRESETS.map(p=>
+    `<option value="${p.key}">${p.label}</option>`
+  ).join('');
+  sel.innerHTML = `${autoOpt}<optgroup label="Manual — kartu dibesarkan penuh sampai margin">${manualOpts}</optgroup>`;
+
+  sel.addEventListener('change', e=>{
+    selectedLayoutKey = e.target.value;
+    if(selectedLayoutKey === 'AUTO'){
+      layoutMode = 'AUTO';
+    } else {
+      const preset = LAYOUT_PRESETS.find(p=>p.key===selectedLayoutKey);
+      layoutMode = 'MANUAL';
+      manualCols = preset.cols;
+      manualRows = preset.rows;
+    }
+    renderGrid();
+    toast(layoutMode === 'AUTO'
+      ? 'Layout otomatis — ukuran kartu mengikuti input di panel Ukuran Gambar KTP'
+      : `Layout manual: kartu dibesarkan penuh untuk ${manualCols} kolom × ${manualRows} baris`);
+  });
+}
+
+// ---------- Ukuran gambar KTP (editable, default 13.5x9cm) ----------
+// Mengubah nilai ini hanya berlaku utk foto yang di-crop SETELAH
+// perubahan (rasio dibakar ke gambar saat "Simpan Crop") dan utk layout
+// cetak halaman baru — bukan me-retroaktif kartu yang udah kepalang
+// di-crop dengan rasio lama.
+function initCardSizeInputs(){
+  const wInp = el('cardWInput'), hInp = el('cardHInput'), resetBtn = el('btnResetCardSize');
+  if(!wInp || !hInp) return;
+
+  function commit(){
+    let w = parseFloat(wInp.value), h = parseFloat(hInp.value);
+    if(!isFinite(w) || w <= 0) w = CARD_W_CM;
+    if(!isFinite(h) || h <= 0) h = CARD_H_CM;
+    w = Math.max(1, Math.min(50, w));
+    h = Math.max(1, Math.min(50, h));
+    wInp.value = w; hInp.value = h;
+    const changed = (w !== CARD_W_CM || h !== CARD_H_CM);
+    CARD_W_CM = w; CARD_H_CM = h;
+    if(changed){
+      renderGrid();
+      toast(`Ukuran gambar KTP diubah ke ${w} × ${h} cm`);
+    }
+  }
+
+  wInp.addEventListener('change', commit);
+  hInp.addEventListener('change', commit);
+  wInp.addEventListener('keydown', e=>{ if(e.key==='Enter') wInp.blur(); });
+  hInp.addEventListener('keydown', e=>{ if(e.key==='Enter') hInp.blur(); });
+
+  if(resetBtn){
+    resetBtn.addEventListener('click', ()=>{
+      wInp.value = DEFAULT_CARD_W_CM;
+      hInp.value = DEFAULT_CARD_H_CM;
+      commit();
+    });
+  }
+}
 
 // ---------- File intake ----------
 const dropzone = el('dropzone');
@@ -192,46 +286,66 @@ function updateCropProgress(){
 }
 
 // ---------- Grid rendering ----------
+// Kartu baru diupload TIDAK langsung tampil di daftar — mereka nunggu
+// di antrian crop (cropQueue) dan hanya masuk ke grid begitu user
+// menekan "Simpan Crop". Ini mencegah daftar kepenuhan foto mentah yang
+// belum diproses / masih miring sebelum sempat di-crop.
 function renderGrid(){
   const grid = el('cardGrid');
   const empty = el('emptyState');
   grid.innerHTML = '';
-  empty.style.display = cards.length ? 'none' : 'block';
-  el('headerCount').textContent = cards.length + ' kartu';
-  el('listSub').textContent = cards.length ? `${cards.length} KTP dimuat` : 'belum ada data';
+  const visibleCards = cards.filter(c=>c.croppedDataURL);
+  empty.style.display = visibleCards.length ? 'none' : 'block';
+  el('headerCount').textContent = visibleCards.length + ' kartu';
+  el('listSub').textContent = visibleCards.length ? `${visibleCards.length} KTP dimuat` : 'belum ada data';
   el('layoutInfo').textContent = layoutDescription();
   const specW = el('specPaperName'); if(specW) specW.textContent = paper().label.split(' (')[0];
   const specDim = el('specPaperDim'); if(specDim) specDim.textContent = paper().label.match(/\(([^)]+)\)/)?.[1] || '';
 
-  const readyCount = cards.filter(c=>c.croppedDataURL).length;
+  const readyCount = visibleCards.length;
   const previewBtns = [el('btnPreview'), el('btnPreviewMobile')];
   previewBtns.forEach(b=> b.disabled = readyCount === 0);
 
-  cards.forEach(c=>{
+  visibleCards.forEach(c=>{
     const div = document.createElement('div');
     div.className = 'kcard';
     const statusLabel = c.status === 'enhanced' ? 'HD' : (c.status === 'cropped' ? 'Cropped' : 'Belum Dicrop');
     const statusClass = c.status === 'enhanced' ? 'enhanced' : (c.status === 'cropped' ? 'cropped' : 'raw');
     const thumbClass = c.croppedDataURL ? 'thumb-ready' : 'thumb-raw';
+    const thumbSrc = c.croppedDataURL || c.rawImg.src;
+    // Kartu sudah di-crop selalu tersimpan landscape (utk layout cetak),
+    // jadi khusus di preview UI dibungkus wrapper .rot90 supaya tampil
+    // tegak seperti KTP fisik. Kartu raw (belum crop) tampil apa adanya.
+    const thumbInner = c.croppedDataURL
+      ? `<div class="rot90"><img src="${thumbSrc}" alt="KTP"></div>`
+      : `<img src="${thumbSrc}" alt="KTP">`;
     div.innerHTML = `
-      <div class="thumb ${thumbClass}">
+      <div class="thumb ${thumbClass}" data-act="zoom" data-id="${c.id}">
         <span class="status ${statusClass}">${statusLabel}</span>
-        <img src="${c.croppedDataURL || c.rawImg.src}" alt="KTP">
+        <div class="frame">
+          ${thumbInner}
+        </div>
+        <div class="zoom-hint">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M11 8v6M8 11h6"/></svg>
+        </div>
       </div>
       <div class="body">
-        <div class="phone-row">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.8 19.8 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.8 19.8 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.362 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0122 16.92z"/></svg>
-          <input type="text" placeholder="No. HP (opsional)" value="${escapeHtml(c.phone)}" data-field="phone" data-id="${c.id}">
-        </div>
         <div class="actions">
           <button class="icnbtn" title="Crop ulang" data-act="crop" data-id="${c.id}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2v14a2 2 0 002 2h14M18 22V8a2 2 0 00-2-2H2"/></svg>
+            <span>Crop</span>
+          </button>
+          <button class="icnbtn" title="Putar 90°" data-act="rotate" data-id="${c.id}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 004 14.5v0A5.5 5.5 0 009.5 20H13"/></svg>
+            <span>Putar</span>
           </button>
           <button class="icnbtn" title="HD-kan foto buram" data-act="enhance" data-id="${c.id}" ${!c.croppedDataURL ? 'disabled':''}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            <span>HD-kan</span>
           </button>
           <button class="icnbtn danger" title="Hapus" data-act="delete" data-id="${c.id}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z"/></svg>
+            <span>Hapus</span>
           </button>
         </div>
       </div>
@@ -251,14 +365,72 @@ function renderGrid(){
       const b = e.currentTarget;
       const id = b.dataset.id, act = b.dataset.act;
       if(act==='crop') openCropModal(id);
+      if(act==='rotate') rotateCardResult(id);
       if(act==='enhance') runEnhance(id, b);
       if(act==='delete'){ cards = cards.filter(c=>c.id!==id); renderGrid(); }
+    });
+  });
+  // bind thumbnail tap-to-zoom (lihat hasil crop besar)
+  grid.querySelectorAll('.thumb[data-act="zoom"]').forEach(t=>{
+    t.addEventListener('click', e=>{
+      openZoomModal(e.currentTarget.dataset.id);
     });
   });
 }
 
 function escapeHtml(s){
   return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Putar hasil crop (kartu yang sudah tersimpan di daftar) 90° searah
+// jarum jam, langsung di tempat — tanpa perlu buka ulang editor crop.
+// Berguna kalau hasil crop kebalik/miring 90° setelah disimpan.
+function rotateCardResult(id){
+  const card = cards.find(c=>c.id===id);
+  if(!card || !card.croppedDataURL) return;
+  const img = new Image();
+  img.onload = ()=>{
+    const canvas = document.createElement('canvas');
+    canvas.width = img.height;
+    canvas.height = img.width;
+    const ctx = canvas.getContext('2d');
+    ctx.translate(canvas.width/2, canvas.height/2);
+    ctx.rotate(90*Math.PI/180);
+    ctx.drawImage(img, -img.width/2, -img.height/2);
+    card.croppedDataURL = canvas.toDataURL('image/jpeg', 0.95);
+    renderGrid();
+    toast('Foto diputar 90° ✓');
+  };
+  img.src = card.croppedDataURL;
+}
+
+// ---------- Zoom preview modal (tap kartu utk lihat hasil crop besar) ----------
+function openZoomModal(id){
+  const card = cards.find(c=>c.id===id);
+  if(!card) return;
+  const src = card.croppedDataURL || card.rawImg.src;
+  const plainImg = el('zoomImage');
+  const rotWrap = el('zoomRotWrap');
+  const rotImg = el('zoomImageRot');
+  // Hasil crop tersimpan landscape (utk layout cetak) — tampilkan lewat
+  // wrapper rot90 supaya berdiri tegak seperti KTP fisik. Foto raw
+  // (belum crop) ditampilkan apa adanya.
+  if(card.croppedDataURL){
+    rotImg.src = src;
+    rotWrap.style.display = 'block';
+    plainImg.style.display = 'none';
+  } else {
+    plainImg.src = src;
+    plainImg.style.display = 'block';
+    rotWrap.style.display = 'none';
+  }
+  el('zoomStatusHint').textContent = card.croppedDataURL
+    ? (card.enhanced ? 'Tampilan penuh — foto ini sudah diperjelas (HD).' : 'Tampilan penuh sesuai hasil crop saat ini.')
+    : 'Foto ini belum di-crop — tampilan asli sebelum diproses.';
+  el('zoomModal').style.display = 'flex';
+}
+function closeZoomModal(){
+  el('zoomModal').style.display = 'none';
 }
 
 // Kartu dicetak apa adanya sesuai hasil crop (orientasi diatur manual
@@ -290,7 +462,9 @@ function openCropModal(id){
   el('cropModal').style.display = 'flex';
   updateCropProgress();
 
+  cropZoom = 1;
   bindRotateButtons(card);
+  bindZoomButtons();
   rebuildCropStage(card);
 }
 
@@ -324,6 +498,76 @@ function rebuildCropStage(card){
   cropSourceCanvas = canvas;
   autoDetectCrop();
   bindCropDrag(canvas);
+  computeCropBaseFitSize();
+  applyCropZoom();
+}
+
+const ZOOM_MIN = 0.5, ZOOM_MAX = 2, ZOOM_STEP = 0.25;
+
+// ---- Zoom (perbesar/perkecil area kerja crop, biar geser sudut kotak
+// hijau bisa lebih presisi terutama di foto beresolusi tinggi). Rentang
+// 50%-200% (100% = ukuran pas/fit awal).
+//
+// PENTING: canvas di-resize LANGSUNG lewat CSS width/height (bukan cuma
+// transform:scale), supaya kotak layoutnya ikut mengecil/membesar sesuai
+// isinya. Kalau cuma pakai transform:scale, ukuran elemen di DOM tetap
+// sebesar semula walau tampilan visualnya ngecil — makanya sebelumnya
+// waktu di-zoom-out selalu nyisain area kosong item di sebelahnya.
+function computeCropBaseFitSize(){
+  const stage = el('cropStage');
+  const canvas = cropSourceCanvas;
+  // Ukuran stage yang tersedia utk menampung canvas di 100% (sebelum ada
+  // scrollbar dari zoom), pakai lebar stage & tinggi max yg sama dgn CSS
+  // max-height. Style CSS max-height:58vh sudah diatur di stylesheet,
+  // jadi kita baca langsung dari elemen supaya konsisten di semua layar.
+  const availW = stage.clientWidth || stage.getBoundingClientRect().width;
+  const cs = getComputedStyle(stage);
+  const availH = parseFloat(cs.maxHeight) || 500;
+  const naturalRatio = canvas.width / canvas.height;
+  let fitW = availW, fitH = fitW / naturalRatio;
+  if(fitH > availH){ fitH = availH; fitW = fitH*naturalRatio; }
+  cropBaseFitW = Math.round(fitW);
+  cropBaseFitH = Math.round(fitH);
+}
+
+function applyCropZoom(){
+  const canvas = el('cropCanvas');
+  const stage = el('cropStage');
+  const dispW = Math.round(cropBaseFitW*cropZoom);
+  const dispH = Math.round(cropBaseFitH*cropZoom);
+  canvas.style.width = dispW + 'px';
+  canvas.style.height = dispH + 'px';
+  // Mode "zoomed" (scrollable) cuma perlu begitu kontennya lebih besar
+  // dari area stage — yaitu waktu diperbesar di atas 100%. Di 100% ke
+  // bawah, kontennya selalu muat penuh jadi cukup flex-center biasa.
+  stage.classList.toggle('zoomed', cropZoom > 1.001);
+  const pctEl = el('zoomPct');
+  if(pctEl) pctEl.textContent = Math.round(cropZoom*100) + '%';
+  const outBtn = el('btnZoomOut');
+  const inBtn = el('btnZoomIn');
+  if(outBtn) outBtn.disabled = cropZoom <= ZOOM_MIN + 0.001;
+  if(inBtn) inBtn.disabled = cropZoom >= ZOOM_MAX - 0.001;
+}
+
+function setCropZoom(next){
+  const stage = el('cropStage');
+  // Keep the point currently at the stage's visual center anchored while
+  // zooming, so zooming in/out doesn't yank the view somewhere unexpected.
+  const rect = stage.getBoundingClientRect();
+  const midX = stage.scrollLeft + rect.width/2;
+  const midY = stage.scrollTop + rect.height/2;
+  const ratio = next / cropZoom;
+  cropZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, next));
+  applyCropZoom();
+  stage.scrollLeft = midX*ratio - rect.width/2;
+  stage.scrollTop = midY*ratio - rect.height/2;
+}
+
+function bindZoomButtons(){
+  const inBtn = el('btnZoomIn'), outBtn = el('btnZoomOut'), resetBtn = el('btnZoomReset');
+  if(inBtn) inBtn.onclick = ()=> setCropZoom(cropZoom + ZOOM_STEP);
+  if(outBtn) outBtn.onclick = ()=> setCropZoom(cropZoom - ZOOM_STEP);
+  if(resetBtn) resetBtn.onclick = ()=> setCropZoom(1);
 }
 
 function bindRotateButtons(card){
@@ -495,11 +739,21 @@ function pickCardQuadFromLines(peaks, w, h){
   const bl = intersect(bottom, left);
   if(!tl||!tr||!br||!bl) return null;
 
-  // sanity: points should be roughly within (padded) image bounds
-  const pad = Math.max(w,h)*0.25;
+  // Sanity: points should be close to the image bounds, not way outside.
+  // A wide pad here is what let noisy background lines (wood grain, etc.)
+  // pull the detected quad far past the actual card edge — tighten it so
+  // a bad line simply fails this check and we fall back to bbox instead.
+  const pad = Math.max(w,h)*0.06;
   for(const pt of [tl,tr,br,bl]){
     if(pt.x < -pad || pt.x > w+pad || pt.y < -pad || pt.y > h+pad) return null;
   }
+
+  // Sanity: resulting quad area shouldn't be wildly larger than the
+  // image itself (another symptom of a stray outside line being picked).
+  const area = Math.abs(
+    (tr.x-tl.x)*(bl.y-tl.y) - (bl.x-tl.x)*(tr.y-tl.y)
+  );
+  if(area > w*h*1.15) return null;
 
   return { tl, tr, br, bl };
 }
@@ -519,15 +773,20 @@ function bboxFallback(mag, w, h){
     }
   }
 
+  // Kalau nyaris nggak ada sinyal tepi di sumbu ini (mis. bagian
+  // atas/bawah foto sudah full kartu, nggak ada background yang
+  // kelihatan), itu artinya kartu MEMENUHI frame di sumbu tsb — jadi
+  // batasnya harus full 0..len, BUKAN dipotong paksa ke 6%/94% (itu
+  // yang bikin hasil crop kepotong dikit padahal fotonya udah pas/full).
   function findBounds(arr, len){
     const total = arr.reduce((a,b)=>a+b,0);
-    if(total < 5) return [Math.round(len*0.06), Math.round(len*0.94)];
+    if(total < 5) return [0, len];
     const target = total*0.02;
     let acc=0, start=0;
     for(let i=0;i<len;i++){ acc+=arr[i]; if(acc>=target){ start=i; break; } }
     acc=0; let end=len-1;
     for(let i=len-1;i>=0;i--){ acc+=arr[i]; if(acc>=target){ end=i; break; } }
-    if(end<=start){ start=Math.round(len*0.06); end=Math.round(len*0.94); }
+    if(end<=start) return [0, len];
     return [start,end];
   }
 
@@ -536,11 +795,15 @@ function bboxFallback(mag, w, h){
 
   const detW = x1-x0, detH = y1-y0;
   if(detW < w*0.25 || detH < h*0.25){
-    x0 = Math.round(w*0.05); x1 = Math.round(w*0.95);
-    y0 = Math.round(h*0.05); y1 = Math.round(h*0.95);
+    x0 = 0; x1 = w;
+    y0 = 0; y1 = h;
   }
 
-  const padX = (x1-x0)*0.012, padY=(y1-y0)*0.012;
+  // Padding tipis ke dalam supaya nggak makan tepi fisik kartu — tapi
+  // kalau bound sudah full frame (0..len, artinya kartu memenuhi sisi
+  // itu), jangan dipangkas lagi, biar hasil crop-nya full sesuai foto.
+  const padX = (x0===0 && x1===w) ? 0 : (x1-x0)*0.012;
+  const padY = (y0===0 && y1===h) ? 0 : (y1-y0)*0.012;
   x0+=padX; x1-=padX; y0+=padY; y1-=padY;
 
   return { tl:{x:x0,y:y0}, tr:{x:x1,y:y0}, br:{x:x1,y:y1}, bl:{x:x0,y:y1} };
@@ -571,7 +834,16 @@ function autoDetectCrop(){
     }
   }
 
-  // clamp to canvas bounds
+  // clamp to canvas bounds — if the quad still overshoots past the edge
+  // after clamping (a sign the detected line was bad, not just slightly
+  // wide), it's safer to discard it and use the bbox fallback instead of
+  // showing an obviously-wrong oversized box to the user.
+  const overshoots = ['tl','tr','br','bl'].some(k=>
+    quad[k].x < -2 || quad[k].x > w+2 || quad[k].y < -2 || quad[k].y > h+2
+  );
+  if(overshoots){
+    quad = bboxFallback(mag, w, h);
+  }
   for(const k of ['tl','tr','br','bl']){
     quad[k].x = Math.max(0, Math.min(w, quad[k].x));
     quad[k].y = Math.max(0, Math.min(h, quad[k].y));
@@ -950,18 +1222,47 @@ function closePreviewModal(){ el('previewModal').style.display='none'; }
 el('btnPreview').addEventListener('click', openPreview);
 el('btnPreviewMobile').addEventListener('click', openPreview);
 
-// Blok kartu di kertas: lebar = sisi pendek KTP (9cm, karena kartu
-// diputar 90° saat dicetak), tinggi = sisi panjang KTP (13.5cm) +
-// ruang tulis no HP.
+// Blok kartu di kertas: kartu hasil crop selalu tersimpan LANDSCAPE dengan
+// rasio CARD_W_CM : CARD_H_CM, lalu diputar 90° khusus saat dicetak supaya
+// berdiri tegak. Strip "No. HP" ditempel di SAMPING KANAN foto (bukan di
+// bawah), jadi:
+//   lebar blok  = sisi pendek kartu (jadi lebar kolom setelah rotasi) + lebar strip HP
+//   tinggi blok = sisi panjang kartu (jadi tinggi baris setelah rotasi)
+//
+// Dua mode:
+//  - AUTO: hitung kolom/baris maksimal yang muat di kertas untuk ukuran
+//    kartu yang di-set user (perilaku lama, dipertahankan sebagai default).
+//  - MANUAL: user pilih sendiri jumlah kolom x baris dari dropdown; ukuran
+//    kartu ditarik otomatis agar PAS memenuhi kertas sampai batas margin
+//    (bukan lagi diambil dari CARD_W_CM/CARD_H_CM input, supaya benar2
+//    "1 kertas full sampai margin" sesuai jumlah kartu yang diminta).
 function computeLayout(){
   const p = paper();
-  const blockWmm = CARD_H_CM*10;                    // 90mm (sisi pendek jadi lebar kolom)
-  const blockHmm = CARD_W_CM*10 + PHONE_SPACE_MM;    // 135+14 = 149mm (sisi panjang + ruang HP)
   const usableW = p.w - 2*MARGIN_MM;
   const usableH = p.h - 2*MARGIN_MM;
+
+  if(layoutMode === 'MANUAL'){
+    const cols = Math.max(1, manualCols);
+    const rows = Math.max(1, manualRows);
+    // Ruang yang tersedia utk tiap blok kartu (termasuk gap antar kartu)
+    const blockWmm = (usableW - (cols-1)*GAP_MM) / cols;
+    const blockHmm = (usableH - (rows-1)*GAP_MM) / rows;
+    // Strip HP ambil porsi tetap dari lebar blok (proporsional, supaya
+    // tetap rapi walau blok besar/kecil), foto mengisi sisanya.
+    const phoneWmm = Math.max(10, Math.min(PHONE_SPACE_MM, blockWmm*0.22));
+    return { blockWmm, blockHmm, phoneWmm, cols, rows, perPage: cols*rows, paperW: p.w, paperH: p.h, mode:'MANUAL' };
+  }
+
+  // AUTO mode (perilaku lama): ukuran kartu dari input user, kolom/baris
+  // dihitung maksimal yang muat.
+  const shortSideCm = Math.min(CARD_W_CM, CARD_H_CM);
+  const longSideCm  = Math.max(CARD_W_CM, CARD_H_CM);
+  const photoWmm = shortSideCm*10;               // sisi pendek -> lebar foto setelah rotasi
+  const blockHmm = longSideCm*10;                // sisi panjang -> tinggi blok (tanpa tambahan lagi, phone strip di samping bukan di bawah)
+  const blockWmm = photoWmm + PHONE_SPACE_MM;    // lebar blok = foto + strip HP di kanan
   const cols = Math.max(1, Math.floor((usableW+GAP_MM)/(blockWmm+GAP_MM)));
   const rows = Math.max(1, Math.floor((usableH+GAP_MM)/(blockHmm+GAP_MM)));
-  return { blockWmm, blockHmm, cols, rows, perPage: cols*rows, paperW: p.w, paperH: p.h };
+  return { blockWmm, blockHmm, phoneWmm: PHONE_SPACE_MM, cols, rows, perPage: cols*rows, paperW: p.w, paperH: p.h, mode:'AUTO' };
 }
 
 let previewReadyCards = [];
@@ -1013,10 +1314,10 @@ function drawPageOfCards(ctx, pageCards, layout, pageWpx, pageHpx, onImagesReady
 
   const marginPx = MARGIN_MM*MM_TO_PX;
   const gapPx = GAP_MM*MM_TO_PX;
-  const blockWpx = layout.blockWmm*MM_TO_PX;      // printed block width (9cm, post-rotation)
-  const blockHpx = layout.blockHmm*MM_TO_PX;      // printed block height (13.5cm photo + phone space)
-  const photoLongPx = (CARD_W_CM*10)*MM_TO_PX;    // long side of card (13.5cm), now vertical
-  const phoneHpx = (PHONE_SPACE_MM)*MM_TO_PX;
+  const blockWpx = layout.blockWmm*MM_TO_PX;   // total block width = photo width + phone strip width
+  const blockHpx = layout.blockHmm*MM_TO_PX;   // block height = long side of card (post-rotation)
+  const phoneWpx = layout.phoneWmm*MM_TO_PX;   // width of the vertical "No. HP" strip on the right
+  const photoWpx = blockWpx - phoneWpx;        // remaining width goes to the (rotated) photo
 
   let loaded = 0;
   const total = pageCards.length;
@@ -1028,7 +1329,7 @@ function drawPageOfCards(ctx, pageCards, layout, pageWpx, pageHpx, onImagesReady
     const x = marginPx + col*(blockWpx+gapPx);
     const y = marginPx + row*(blockHpx+gapPx);
 
-    // cutting guide (dashed border around whole card block incl. phone space)
+    // cutting guide (dashed border around whole card block incl. phone strip)
     ctx.save();
     ctx.strokeStyle = '#cfcabb';
     ctx.setLineDash([4,3]);
@@ -1040,39 +1341,55 @@ function drawPageOfCards(ctx, pageCards, layout, pageWpx, pageHpx, onImagesReady
     img.onload = ()=>{
       // Hasil crop selalu tersimpan landscape (13.5:9). Kita putar 90°
       // khusus saat menggambar ke lembar cetak, supaya sisi panjangnya
-      // berdiri vertikal dan 2 kolom muat di kertas (persis referensi Word).
+      // berdiri vertikal dan mengisi kolom foto di sebelah kiri blok.
       ctx.save();
       ctx.beginPath();
-      ctx.rect(x, y, blockWpx, photoLongPx);
+      ctx.rect(x, y, photoWpx, blockHpx);
       ctx.clip();
 
-      ctx.translate(x + blockWpx/2, y + photoLongPx/2);
+      ctx.translate(x + photoWpx/2, y + blockHpx/2);
       // -90° (bukan +90°) supaya foto & kop KTP berdiri persis seperti
       // referensi Word: bagian foto di ATAS, bukan malah jadi di bawah.
       ctx.rotate(-Math.PI/2);
-      ctx.drawImage(img, -photoLongPx/2, -blockWpx/2, photoLongPx, blockWpx);
+      ctx.drawImage(img, -blockHpx/2, -photoWpx/2, blockHpx, photoWpx);
       ctx.restore();
 
       // photo border
       ctx.strokeStyle = '#888';
       ctx.lineWidth = 1;
-      ctx.strokeRect(x, y, blockWpx, photoLongPx);
+      ctx.strokeRect(x, y, photoWpx, blockHpx);
 
-      // phone-space area: light guide line + label
-      const phoneY = y + photoLongPx;
+      // ---- Strip "No. HP" di SAMPING KANAN foto: garis vertikal PANJANG
+      // mepet ke tepi KANAN strip (dekat batas kartu/kertas), dengan label
+      // "No. HP:" kecil horizontal di bagian ATAS strip (bukan dirotasi
+      // tegak lagi) — supaya label tidak makan lebar dan seluruh badan
+      // strip di bawah label jadi ruang kosong lega utk ditulis pulpen.
+      const stripX = x + photoWpx;
       ctx.save();
-      ctx.strokeStyle = '#333';
-      ctx.setLineDash([]);
-      ctx.lineWidth = 0.75;
-      ctx.beginPath();
-      ctx.moveTo(x + blockWpx*0.12, phoneY + phoneHpx*0.62);
-      ctx.lineTo(x + blockWpx*0.94, phoneY + phoneHpx*0.62);
-      ctx.stroke();
+      ctx.strokeStyle = '#ddd8c6';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(stripX, y, phoneWpx, blockHpx);
 
+      // label kecil horizontal di ATAS strip, rata tengah
       ctx.fillStyle = '#555';
-      ctx.font = `${Math.round(phoneHpx*0.30)}px Arial`;
-      ctx.textBaseline = 'alphabetic';
-      ctx.fillText('No. HP:', x + blockWpx*0.04, phoneY + phoneHpx*0.6);
+      ctx.font = `${Math.round(phoneWpx*0.62)}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText('No.', stripX + phoneWpx/2, y + phoneWpx*0.15);
+      ctx.fillText('HP:', stripX + phoneWpx/2, y + phoneWpx*0.85);
+      ctx.textAlign = 'left';
+
+      // garis tempat tulis tangan: vertikal, MEPET ke tepi KANAN strip
+      // (batas terluar blok kartu), memanjang dari bawah label sampai
+      // hampir ke bawah blok.
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 0.75;
+      const lineX = stripX + phoneWpx*0.86;
+      ctx.beginPath();
+      ctx.moveTo(lineX, y + phoneWpx*1.9);
+      ctx.lineTo(lineX, y + blockHpx*0.97);
+      ctx.stroke();
+      ctx.restore();
       ctx.restore();
 
       loaded++;
@@ -1127,4 +1444,6 @@ if('serviceWorker' in navigator){
 }
 
 initPaperSelect();
+initLayoutModeSelect();
+initCardSizeInputs();
 renderGrid();

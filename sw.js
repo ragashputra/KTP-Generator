@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cetak-ktp-v4'; // fix: thumbnail kartu ter-crop sudah pakai contain (bukan cover) supaya kartu tidak pernah terpotong di preview grid
+const CACHE_NAME = 'cetak-ktp-v13'; // margin tepi kertas cetak diperkecil dari 6mm jadi 3mm (0.3cm) di semua sisi, biar lebih tipis & kartu yang muat per lembar bisa lebih banyak
 const ASSETS = ['./index.html', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e=>{
