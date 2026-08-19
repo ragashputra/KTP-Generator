@@ -2,12 +2,11 @@
  * Cetak KTP Generator — Backend Statistik Penggunaan
  * ===================================================
  * Web App sederhana pakai Google Apps Script + Google Sheets sebagai
- * database counter. Sengaja HANYA pakai doGet (bukan doPost) karena GET
- * tidak memicu PREFLIGHT request (OPTIONS) seperti POST — tapi ini cuma
- * separuh cerita: response-nya TETAP wajib membawa header
- * Access-Control-Allow-Origin, kalau tidak browser akan tetap memblokir
- * fetch() membaca hasilnya (lihat jsonResponse() di bawah — sudah
- * ditangani di versi ini).
+ * database counter. Sengaja HANYA pakai doGet (bukan doPost) karena request
+ * GET biasa dari fetch() browser (tanpa header custom) dianggap "simple
+ * request" oleh CORS — Google otomatis mengirim header CORS yang sesuai di
+ * respons redirect miliknya sendiri (script.google.com -> googleusercontent.com),
+ * jadi tidak perlu (dan tidak bisa) diatur manual dari kode script ini.
  *
  * CARA DEPLOY (lakukan sekali saja):
  * 1. Buka https://script.google.com/ → New Project
@@ -25,7 +24,12 @@
  *    muncul warning (ini normal utk script buatan sendiri, bukan tanda bahaya)
  * 9. Copy URL yang muncul, bentuknya seperti:
  *    https://script.google.com/macros/s/AKfycb.../exec
- * 10. Tempel URL itu ke STATS_API_BASE di app.js (gantikan URL CountAPI lama)
+ * 10. Tempel URL itu ke STATS_API_BASE di app.js (gantikan URL lama)
+ * 11. TES DULU sebelum sambungin ke app.js: buka URL itu langsung di tab
+ *     browser, tambahkan "?action=getAll" di belakangnya, lalu Enter.
+ *     Harus muncul teks JSON singkat (mis. {"printDirect":0,...}) — BUKAN
+ *     halaman error atau minta login. Kalau ini gagal, app.js juga pasti
+ *     gagal, jadi selalu cek di sini dulu sebelum curiga ke tempat lain.
  *
  * PENTING kalau nanti edit script ini lagi:
  * Untuk update kode TANPA mengubah URL /exec yang sudah aktif (supaya
@@ -36,15 +40,23 @@
  * 3. Di bagian "Version", pilih "New version"
  * 4. Klik Deploy
  * URL /exec tetap sama persis, hanya kode di baliknya yang ke-update.
+ * Setelah itu, ULANGI langkah 11 di atas (tes URL langsung di tab
+ * browser) sebelum menganggap masalahnya selesai.
  *
- * ⚠️ CATATAN FIX (kalau sebelumnya panel Statistik selalu gagal muat):
- * Versi Code.gs ini menambahkan header "Access-Control-Allow-Origin: *"
- * di jsonResponse() — tanpa header itu, browser MEMBLOKIR fetch() dari
- * app.js membaca hasil response (walau request-nya sendiri sukses jalan
- * & data tetap ke-update di Sheet, cuma browsernya yang nolak baca
- * hasilnya). Update script ini pakai langkah "New version" di atas
- * (BUKAN "New deployment") supaya URL /exec yang sudah dipakai di
- * app.js tetap sama & langsung kepakai kode barunya.
+ * ⚠️ RIWAYAT PERBAIKAN panel Statistik (biar gak keulang lagi):
+ * v1: fetch() selalu gagal — dikira soal koneksi internet, ternyata Code.gs
+ *     versi paling awal memang belum ke-deploy dengan benar / URL keliru.
+ * v2: masih gagal — sempat dicurigai butuh header CORS manual, jadi
+ *     ditambahkan .setHeaders({'Access-Control-Allow-Origin':'*'}) di
+ *     jsonResponse(). INI SALAH: TextOutput dari ContentService TIDAK
+ *     punya method setHeaders(), jadi setiap request malah error total
+ *     ("TypeError: ...setHeaders is not a function").
+ * v3 (versi ini): .setHeaders() dihapus. Untuk request GET polos seperti
+ *     ini, Google Apps Script sudah otomatis mengizinkan browser membaca
+ *     responnya — tidak ada header CORS manual yang perlu diatur dari
+ *     kode sama sekali. Kalau masih gagal setelah pakai versi ini,
+ *     kemungkinan besar penyebabnya di deployment (lihat langkah 11 &
+ *     catatan "New version" di atas), BUKAN soal CORS lagi.
  *
  * Data tersimpan di Google Sheet yang otomatis dibuat script ini sendiri
  * (sheet "Stats") di dalam file/project yang sama — kamu bisa buka lewat
@@ -171,17 +183,17 @@ function handleGetAll() {
 }
 
 function jsonResponse(obj) {
-  // PENTING: tanpa header CORS ini, fetch() dari browser (GitHub Pages,
-  // dsb) akan GAGAL walau request-nya sendiri sukses dieksekusi di
-  // server (data tetap ke-update di Sheet!). GET memang tidak kena
-  // PREFLIGHT (request OPTIONS terpisah), tapi response-nya tetap wajib
-  // punya Access-Control-Allow-Origin supaya browser MENGIZINKAN
-  // JavaScript membaca isi response tsb — dua hal yang berbeda. Tanpa
-  // header ini, browser melempar "TypeError: Failed to fetch" yang
-  // keliatannya kayak masalah internet, padahal sebenarnya cuma header
-  // response yang kurang.
+  // CATATAN (koreksi dari versi sebelumnya): TextOutput TIDAK punya method
+  // .setHeaders() — itu kesalahan saya di revisi sebelumnya & bikin SETIAP
+  // request ke endpoint ini gagal total dengan error
+  // "TypeError: ...setHeaders is not a function". Untungnya, itu memang
+  // TIDAK diperlukan: request GET biasa (bukan lewat fetch dengan header
+  // custom/credentials) ke Apps Script Web App dianggap "simple request"
+  // oleh browser, dan Google sudah otomatis mengirim header CORS yang
+  // sesuai di respons redirect (script.google.com -> googleusercontent.com)
+  // miliknya sendiri — jadi fetch() dari browser tetap bisa baca hasilnya
+  // tanpa perlu set header manual di sini sama sekali.
   return ContentService
     .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON)
-    .setHeaders({ 'Access-Control-Allow-Origin': '*' });
+    .setMimeType(ContentService.MimeType.JSON);
 }

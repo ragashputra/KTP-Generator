@@ -57,7 +57,7 @@ let printMode = 'COLOR';
 // Selama masih placeholder ini, fitur statistik akan gagal dgn aman
 // (fetchUsageStats mengembalikan null, trackUsage diam-diam gagal) —
 // TIDAK memengaruhi fitur cetak/download utama sama sekali.
-const STATS_API_BASE = 'https://script.google.com/macros/s/AKfycbzDzC6m71_UF_y5beDNZJTblvzW5wuxsuDgffkmWwa5E0KBSyJk6BAp_mJxeuvabk3w4w/exec';
+const STATS_API_BASE = 'https://script.google.com/macros/s/AKfycbz0WmYtgjoUr2QO5en_b8LdNP6asIv562jXqcRKn07Mc-GScFw1LLJHi2uF0aBZeEceUA/exec';
 
 // Menambah counter +1 di server (fire-and-forget). Sengaja TIDAK pernah
 // melempar error atau memblokir alur utama (download/print harus tetap
@@ -99,7 +99,7 @@ async function fetchUsageStats(){
     // Ini nyaris selalu berarti fetch() diblokir browser (CORS: response
     // dari Apps Script tidak membawa header Access-Control-Allow-Origin),
     // BUKAN masalah internet user — lihat catatan CORS di Code.gs.
-    console.warn('[Statistik] fetch() gagal — kemungkinan besar CORS (response Apps Script belum ada header Access-Control-Allow-Origin) atau URL STATS_API_BASE salah/deployment nonaktif. Detail:', e);
+    console.warn('[Statistik] fetch() gagal total (bukan CORS) — kemungkinan besar URL STATS_API_BASE salah/typo, deployment Apps Script nonaktif, atau ada error runtime di kode Code.gs (buka URL-nya langsung di tab browser + ?action=getAll untuk lihat pesan errornya). Detail:', e);
     return { printDirect: null, downloadPdf: null, lastUsedAt: null };
   }
 }
@@ -628,7 +628,7 @@ async function loadStatsIntoModal(){
   if(notConfigured){
     lastUsedEl.textContent = 'Statistik belum aktif — backend penyimpanan data belum dikonfigurasi.';
   } else if(stats.printDirect === null && stats.downloadPdf === null){
-    lastUsedEl.textContent = 'Gagal memuat data dari server statistik. Ini biasanya bukan soal koneksi internet kamu — kemungkinan besar konfigurasi backend-nya (deployment Apps Script) yang perlu dicek. Coba "Muat Ulang", atau hubungi pengelola aplikasi kalau terus gagal.';
+    lastUsedEl.textContent = 'Gagal memuat data dari server statistik. Coba "Muat Ulang" dulu — kalau masih gagal, kemungkinan besar ada masalah di backend (deployment Apps Script), bukan koneksi internet kamu. Cek Console (F12) untuk detail error, atau hubungi pengelola aplikasi.';
   } else if(stats.lastUsedAt){
     lastUsedEl.textContent = `Terakhir digunakan ${formatRelativeTime(stats.lastUsedAt)}`;
   } else {

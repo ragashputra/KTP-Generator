@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cetak-ktp-v31'; // FIX panel Statistik: Code.gs sekarang kirim header Access-Control-Allow-Origin (akar masalah fetch selalu gagal = CORS, bukan koneksi internet user) — lihat Code.gs utk cara update deployment tanpa ganti URL. Pesan error & console.warn di app.js juga diperjelas.
+const CACHE_NAME = 'cetak-ktp-v32'; // FIX kritis: Code.gs v31 salah pakai .setHeaders() di TextOutput (method itu TIDAK ADA, bikin endpoint error total). Sudah dihapus — Apps Script otomatis handle CORS utk GET, gak perlu diatur manual. STATS_API_BASE di app.js juga diupdate ke deployment/project baru.
 const ASSETS = ['./index.html', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e=>{
