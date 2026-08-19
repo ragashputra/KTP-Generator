@@ -216,13 +216,18 @@ const dropzone = el('dropzone');
 const fileInput = el('fileInput');
 
 dropzone.addEventListener('click', () => fileInput.click());
+
+// Target drag-and-drop diperluas ke SELURUH halaman (bukan cuma tombol
+// kecil di header) — supaya walau tombol upload di header dibuat compact,
+// UX "seret file ke halaman ini" tetap nyaman & gampang kena. Highlight
+// visual (.drag) tetap ditampilkan di tombol header sebagai indikator.
 ['dragenter','dragover'].forEach(ev=>{
-  dropzone.addEventListener(ev, e=>{ e.preventDefault(); dropzone.classList.add('drag'); });
+  document.body.addEventListener(ev, e=>{ e.preventDefault(); dropzone.classList.add('drag'); });
 });
 ['dragleave','drop'].forEach(ev=>{
-  dropzone.addEventListener(ev, e=>{ e.preventDefault(); dropzone.classList.remove('drag'); });
+  document.body.addEventListener(ev, e=>{ e.preventDefault(); dropzone.classList.remove('drag'); });
 });
-dropzone.addEventListener('drop', e=>{
+document.body.addEventListener('drop', e=>{
   const files = [...e.dataTransfer.files].filter(f=>f.type.startsWith('image/'));
   handleFiles(files);
 });
@@ -892,9 +897,9 @@ function drawCropOverlay(){
   // draw quad
   const q = cropQuad;
   ctx.save();
-  ctx.strokeStyle = '#6366f1';
+  ctx.strokeStyle = '#15866a';
   ctx.lineWidth = 2.5;
-  ctx.fillStyle = 'rgba(99,102,241,0.14)';
+  ctx.fillStyle = 'rgba(21,134,106,0.16)';
   ctx.beginPath();
   ctx.moveTo(q.tl.x,q.tl.y);
   ctx.lineTo(q.tr.x,q.tr.y);
@@ -904,7 +909,7 @@ function drawCropOverlay(){
   ctx.fill(); ctx.stroke();
 
   // corner handles
-  ctx.fillStyle = '#6366f1';
+  ctx.fillStyle = '#15866a';
   [q.tl,q.tr,q.br,q.bl].forEach(pt=>{
     ctx.beginPath();
     ctx.arc(pt.x, pt.y, 9, 0, Math.PI*2);
@@ -1241,8 +1246,8 @@ el('btnPreviewMobile').addEventListener('click', openPreview);
 
 // Blok KTP di kertas: KTP hasil crop selalu tersimpan LANDSCAPE dengan
 // rasio CARD_W_CM : CARD_H_CM, lalu diputar 90° khusus saat dicetak supaya
-// berdiri tegak. Strip "No. HP" ditempel di SAMPING KANAN foto (bukan di
-// bawah), jadi:
+// berdiri tegak. Strip "No. HP" ditempel di SAMPING KANAN foto (mengikuti
+// referensi Word — teks ditulis vertikal, bukan horizontal di bawah), jadi:
 //   lebar blok  = sisi pendek KTP (jadi lebar kolom setelah rotasi) + lebar strip HP
 //   tinggi blok = sisi panjang KTP (jadi tinggi baris setelah rotasi)
 //
@@ -1264,23 +1269,23 @@ function computeLayout(){
     // Ruang yang tersedia utk tiap blok KTP (termasuk gap antar KTP)
     const blockWmm = (usableW - (cols-1)*GAP_MM) / cols;
     const blockHmm = (usableH - (rows-1)*GAP_MM) / rows;
-    // Strip HP ambil porsi tetap dari TINGGI blok (proporsional, supaya
-    // tetap rapi walau blok besar/kecil), foto mengisi sisanya di atas.
-    const phoneHmm = Math.max(10, Math.min(PHONE_SPACE_MM, blockHmm*0.16));
-    return { blockWmm, blockHmm, phoneHmm, cols, rows, perPage: cols*rows, paperW: p.w, paperH: p.h, mode:'MANUAL' };
+    // Strip HP ambil porsi tetap dari LEBAR blok (proporsional, supaya
+    // tetap rapi walau blok besar/kecil), foto mengisi sisanya di kiri.
+    const phoneWmm = Math.max(8, Math.min(PHONE_SPACE_MM, blockWmm*0.16));
+    return { blockWmm, blockHmm, phoneWmm, cols, rows, perPage: cols*rows, paperW: p.w, paperH: p.h, mode:'MANUAL' };
   }
 
   // AUTO mode: ukuran KTP dari input user, kolom/baris dihitung
-  // maksimal yang muat. Strip "No. HP" full-width DI BAWAH foto (bukan
-  // di samping) — lebih natural & lega utk ditulis pakai pulpen.
+  // maksimal yang muat. Strip "No. HP" DI SAMPING KANAN foto (teks
+  // vertikal), sesuai referensi Word.
   const shortSideCm = Math.min(CARD_W_CM, CARD_H_CM);
   const longSideCm  = Math.max(CARD_W_CM, CARD_H_CM);
-  const blockWmm = shortSideCm*10;                  // sisi pendek -> lebar blok setelah rotasi
-  const photoHmm = longSideCm*10;                   // sisi panjang -> tinggi area foto (setelah rotasi)
-  const blockHmm = photoHmm + PHONE_SPACE_MM;       // tinggi blok = foto + strip HP di bawah
+  const photoWmm = shortSideCm*10;                  // sisi pendek -> lebar area foto (setelah rotasi)
+  const blockHmm = longSideCm*10;                   // sisi panjang -> tinggi blok (setelah rotasi)
+  const blockWmm = photoWmm + PHONE_SPACE_MM;       // lebar blok = foto + strip HP di kanan
   const cols = Math.max(1, Math.floor((usableW+GAP_MM)/(blockWmm+GAP_MM)));
   const rows = Math.max(1, Math.floor((usableH+GAP_MM)/(blockHmm+GAP_MM)));
-  return { blockWmm, blockHmm, phoneHmm: PHONE_SPACE_MM, cols, rows, perPage: cols*rows, paperW: p.w, paperH: p.h, mode:'AUTO' };
+  return { blockWmm, blockHmm, phoneWmm: PHONE_SPACE_MM, cols, rows, perPage: cols*rows, paperW: p.w, paperH: p.h, mode:'AUTO' };
 }
 
 let previewReadyCards = [];
@@ -1332,7 +1337,7 @@ function buildPreviewSummary(){
     chip('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
       `${layout.cols} kolom × ${layout.rows} baris / lembar`),
     chip(colorIcon, colorLabel),
-    `<span class="chip chip-note">KTP diputar tegak otomatis, space No. HP di bawah foto</span>`,
+    `<span class="chip chip-note">KTP diputar tegak otomatis, space No. HP di samping kanan</span>`,
   ].join('');
 }
 
@@ -1387,10 +1392,10 @@ function drawPageOfCards(ctx, pageCards, layout, pageWpx, pageHpx, onImagesReady
 
   const marginPx = MARGIN_MM*MM_TO_PX;
   const gapPx = GAP_MM*MM_TO_PX;
-  const blockWpx = layout.blockWmm*MM_TO_PX;   // block width = photo width (post-rotation)
-  const blockHpx = layout.blockHmm*MM_TO_PX;   // total block height = photo height + phone strip height
-  const phoneHpx = layout.phoneHmm*MM_TO_PX;   // height of the horizontal "No. HP" strip below the photo
-  const photoHpx = blockHpx - phoneHpx;        // remaining height goes to the (rotated) photo
+  const blockWpx = layout.blockWmm*MM_TO_PX;   // block width = photo width + phone strip width
+  const blockHpx = layout.blockHmm*MM_TO_PX;   // block height = photo height (post-rotation)
+  const phoneWpx = layout.phoneWmm*MM_TO_PX;   // width of the vertical "No. HP" strip beside the photo
+  const photoWpx = blockWpx - phoneWpx;        // remaining width goes to the (rotated) photo
 
   let loaded = 0;
   const total = pageCards.length;
@@ -1414,55 +1419,59 @@ function drawPageOfCards(ctx, pageCards, layout, pageWpx, pageHpx, onImagesReady
     img.onload = ()=>{
       // Hasil crop selalu tersimpan landscape (13.5:9). Kita putar 90°
       // khusus saat menggambar ke lembar cetak, supaya sisi panjangnya
-      // berdiri vertikal dan mengisi area foto di bagian ATAS blok.
+      // berdiri vertikal dan mengisi area foto di bagian KIRI blok.
       ctx.save();
       ctx.beginPath();
-      ctx.rect(x, y, blockWpx, photoHpx);
+      ctx.rect(x, y, photoWpx, blockHpx);
       ctx.clip();
 
-      ctx.translate(x + blockWpx/2, y + photoHpx/2);
+      ctx.translate(x + photoWpx/2, y + blockHpx/2);
       // -90° supaya foto & kop KTP berdiri persis seperti referensi Word:
       // bagian foto/kop provinsi di ATAS, bukan malah jadi di bawah.
       ctx.rotate(-Math.PI/2);
       if(printMode === 'BW'){
-        drawImageGrayscale(ctx, img, -photoHpx/2, -blockWpx/2, photoHpx, blockWpx);
+        drawImageGrayscale(ctx, img, -blockHpx/2, -photoWpx/2, blockHpx, photoWpx);
       } else {
-        ctx.drawImage(img, -photoHpx/2, -blockWpx/2, photoHpx, blockWpx);
+        ctx.drawImage(img, -blockHpx/2, -photoWpx/2, blockHpx, photoWpx);
       }
       ctx.restore();
 
       // photo border
       ctx.strokeStyle = '#888';
       ctx.lineWidth = 1;
-      ctx.strokeRect(x, y, blockWpx, photoHpx);
+      ctx.strokeRect(x, y, photoWpx, blockHpx);
 
-      // ---- Strip "No. HP" full-width DI BAWAH foto: label kecil rata
-      // kiri, lalu garis tempat tulis tangan yang MEMANJANG PENUH dari
-      // dekat tepi kiri sampai TEPAT ke batas kanan gambar KTP (blockWpx)
-      // — bukan cuma stub pendek — supaya lega & jelas buat ditulis pulpen.
-      const stripY = y + photoHpx;
+      // ---- Strip "No. HP" DI SAMPING KANAN foto, teks vertikal —
+      // mengikuti referensi Word: label "No HP:" ditulis berdiri, tegak
+      // lurus sejajar sisi kanan foto, mengisi penuh tinggi blok.
+      const stripX = x + photoWpx;
       ctx.save();
       ctx.strokeStyle = '#ddd8c6';
       ctx.lineWidth = 1;
-      ctx.strokeRect(x, stripY, blockWpx, phoneHpx);
+      ctx.strokeRect(stripX, y, phoneWpx, blockHpx);
 
+      ctx.translate(stripX + phoneWpx/2, y + blockHpx/2);
+      ctx.rotate(-Math.PI/2);
       ctx.fillStyle = '#444';
-      ctx.font = `600 ${Math.round(phoneHpx*0.34)}px Arial`;
+      ctx.font = `600 ${Math.round(phoneWpx*0.34)}px Arial`;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      const labelY = stripY + phoneHpx*0.5;
-      ctx.fillText('No. HP:', x + blockWpx*0.05, labelY);
+      // Setelah rotasi -90°, sumbu X lokal berjalan dari ATAS ke BAWAH
+      // blok asli — jadi teks dimulai dekat tepi ATAS foto (seperti
+      // contoh Word: "No HP:" dimulai dari atas, memanjang ke bawah).
+      const halfLen = blockHpx/2;
+      ctx.fillText('No HP:', -halfLen*0.94, 0);
 
-      // garis tempat tulis tangan: horizontal, dari tepat setelah label
-      // sampai TEPAT ke batas kanan KTP (x+blockWpx) — full ke tepi.
-      const labelWidth = ctx.measureText('No. HP:').width;
-      const lineStartX = x + blockWpx*0.05 + labelWidth + (blockWpx*0.035);
-      const lineEndX = x + blockWpx*0.96; // hampir tepat ke tepi kanan gambar
+      // garis tempat tulis tangan: memanjang dari setelah label sampai
+      // TEPAT ke ujung bawah strip (dekat tepi bawah foto) — full ke tepi.
+      const labelWidth = ctx.measureText('No HP:').width;
+      const lineStartX = -halfLen*0.94 + labelWidth + (phoneWpx*0.12);
+      const lineEndX = halfLen*0.92;
       ctx.strokeStyle = '#333';
       ctx.lineWidth = 0.8;
       ctx.beginPath();
-      ctx.moveTo(lineStartX, labelY + phoneHpx*0.14);
-      ctx.lineTo(lineEndX, labelY + phoneHpx*0.14);
+      ctx.moveTo(lineStartX, phoneWpx*0.16);
+      ctx.lineTo(lineEndX, phoneWpx*0.16);
       ctx.stroke();
       ctx.restore();
       ctx.restore();

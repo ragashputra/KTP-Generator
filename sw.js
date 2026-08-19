@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cetak-ktp-v18'; // rombak total UI: tema netral (putih/abu + accent indigo), semua istilah "kartu" diganti "KTP" di teks & komentar kode
+const CACHE_NAME = 'cetak-ktp-v21'; // fix: tombol "Upload KTP" di header masih hitam (background solid var(--ink) di icon-nya) — sekarang background tombol full emerald (--accent), icon jadi kotak putih transparan di dalamnya
 const ASSETS = ['./index.html', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e=>{
