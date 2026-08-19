@@ -3,49 +3,53 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<meta name="theme-color" content="#0e1116">
+<meta name="theme-color" content="#0d1117">
 <title>Cetak KTP — Generator Layout Cetak</title>
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   /* =========================================================
-     DESIGN TOKENS — palet netral (putih/abu) + satu accent color
-     (indigo). Rombak total dari tema hijau-emas sebelumnya: fokus
-     ke kontras tinggi, whitespace lega, dan komponen yang konsisten
-     mengikuti satu sistem skala (radius, spacing, shadow).
+     DESIGN TOKENS — dark theme ala GitHub: background gelap
+     (#0d1117), surface card (#161b22), border halus (#30363d),
+     teks putih-abu terang, accent hijau GitHub (#238636 / hover
+     #2ea043). Semua komponen di bawah pakai CSS variable ini —
+     jadi ganti token di :root otomatis konsisten ke seluruh UI.
      ========================================================= */
   :root{
-    --bg:#f7f7f8;
-    --surface:#ffffff;
-    --surface-2:#fbfbfc;
-    --ink:#101114;
-    --ink-soft:#5a5d68;
-    --ink-faint:#8b8e99;
-    --border:#e5e6ea;
-    --border-strong:#d4d6dc;
+    --bg:#0d1117;
+    --surface:#161b22;
+    --surface-2:#0d1117;
+    --ink:#e6edf3;
+    --ink-soft:#8b949e;
+    --ink-faint:#6e7681;
+    --border:#30363d;
+    --border-strong:#484f58;
 
-    --accent:#0e6b4f;
-    --accent-hover:#0a5540;
-    --accent-soft:#e7f5ef;
-    --accent-ring:rgba(14,107,79,.16);
+    --accent:#238636;
+    --accent-hover:#2ea043;
+    --accent-soft:rgba(46,160,67,.15);
+    --accent-ring:rgba(46,160,67,.28);
 
-    --success:#0f9d58;
-    --success-soft:#e9f9f0;
-    --warn:#b7791f;
-    --warn-soft:#fdf3e0;
-    --danger:#d5362f;
-    --danger-soft:#fdecec;
+    --inverse:#f0f6fc;
+    --inverse-text:#0d1117;
+
+    --success:#3fb950;
+    --success-soft:rgba(63,185,80,.15);
+    --warn:#d29922;
+    --warn-soft:rgba(210,153,34,.15);
+    --danger:#f85149;
+    --danger-soft:rgba(248,81,73,.15);
 
     --radius-xl:20px;
     --radius-lg:14px;
     --radius-md:10px;
     --radius-sm:8px;
 
-    --shadow-xs:0 1px 2px rgba(16,17,20,.04);
-    --shadow-sm:0 2px 8px rgba(16,17,20,.06), 0 1px 2px rgba(16,17,20,.04);
-    --shadow-md:0 8px 24px rgba(16,17,20,.08), 0 2px 6px rgba(16,17,20,.04);
-    --shadow-lg:0 24px 60px rgba(16,17,20,.16), 0 8px 20px rgba(16,17,20,.08);
+    --shadow-xs:0 1px 2px rgba(1,4,9,.3);
+    --shadow-sm:0 2px 8px rgba(1,4,9,.4), 0 1px 2px rgba(1,4,9,.3);
+    --shadow-md:0 8px 24px rgba(1,4,9,.5), 0 2px 6px rgba(1,4,9,.35);
+    --shadow-lg:0 24px 60px rgba(1,4,9,.65), 0 8px 20px rgba(1,4,9,.45);
 
     --mono:'JetBrains Mono','SFMono-Regular',Consolas,monospace;
     --sans:'Inter',-apple-system,'Segoe UI',sans-serif;
@@ -61,12 +65,45 @@
     text-rendering:optimizeLegibility;
   }
   ::selection{background:var(--accent);color:#fff;}
+
+  /* ============ Scrollbar — tipis & minimalis ala GitHub ============ */
+  /* Default browser scrollbar (putih/abu terang, gemuk) sangat mencolok
+     di atas dark theme. Diganti jadi thumb abu redup yang nge-blend ke
+     background, sedikit lebih terang saat hover — konsisten di semua
+     area scroll (halaman utama, modal, crop-stage, dsb), bukan cuma
+     satu tempat. Firefox pakai properti scrollbar-width/color (thin +
+     warna custom); Chromium/Edge/Safari pakai pseudo-element -webkit-. */
+  *{
+    scrollbar-width:thin;
+    scrollbar-color:var(--border-strong) transparent;
+  }
+  ::-webkit-scrollbar{width:10px;height:10px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{
+    background-color:var(--border-strong);
+    border-radius:20px;
+    border:2px solid var(--bg);
+    background-clip:padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover{background-color:var(--ink-faint);}
+  ::-webkit-scrollbar-corner{background:transparent;}
+  /* Area gelap (modal, crop-stage) punya background beda dari var(--bg),
+     jadi border thumb (dipakai buat bikin efek "padding" tipis di
+     sekeliling thumb) perlu disamakan supaya tidak terlihat kotak putih
+     mengelilingi thumb-nya. */
+  .modal, .crop-stage, .sheet-wrap{
+    scrollbar-color:var(--border-strong) transparent;
+  }
+  .modal::-webkit-scrollbar-thumb{border-color:var(--bg);}
+  .crop-stage::-webkit-scrollbar-thumb{border-color:#101114;}
+  .sheet-wrap::-webkit-scrollbar-thumb{border-color:#1b1c20;}
+
   h1,h2,h3{font-family:var(--sans);}
 
   /* ============ Topbar ============ */
   header.top{
     position:sticky;top:0;z-index:40;
-    background:rgba(247,247,248,.86);
+    background:rgba(13,17,23,.86);
     backdrop-filter:blur(14px) saturate(1.4);
     -webkit-backdrop-filter:blur(14px) saturate(1.4);
     border-bottom:1px solid var(--border);
@@ -76,11 +113,11 @@
   header.top .brand{display:flex;align-items:center;gap:11px;min-width:0;}
   header.top .mark{
     width:34px;height:34px;border-radius:10px;
-    background:var(--ink);
+    background:var(--inverse);
     display:flex;align-items:center;justify-content:center;
     flex-shrink:0;
   }
-  header.top .mark svg{width:18px;height:18px;stroke:#fff;}
+  header.top .mark svg{width:18px;height:18px;stroke:var(--inverse-text);}
   header.top .txt{min-width:0;}
   header.top h1{font-size:14.5px;margin:0;font-weight:700;letter-spacing:-.1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink);}
   header.top p{margin:1px 0 0;font-size:11px;color:var(--ink-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -144,8 +181,8 @@
   .btn-primary:active{transform:scale(.98);}
   .btn-ghost{background:var(--surface);color:var(--ink);border:1.5px solid var(--border);}
   .btn-ghost:hover{border-color:var(--border-strong);background:var(--surface-2);}
-  .btn-dark{background:var(--ink);color:#fff;box-shadow:var(--shadow-xs);}
-  .btn-dark:hover{background:#26282f;}
+  .btn-dark{background:var(--inverse);color:var(--inverse-text);box-shadow:var(--shadow-xs);}
+  .btn-dark:hover{background:#c9d1d9;}
   .btn-dark:active{transform:scale(.98);}
   .btn:disabled{opacity:.4;cursor:not-allowed;transform:none !important;box-shadow:none !important;}
   .btn svg{width:15px;height:15px;flex-shrink:0;}
@@ -418,7 +455,7 @@
   }
   .cm-btn svg{width:13px;height:13px;flex-shrink:0;}
   .cm-btn:not(.active):hover{background:var(--surface);color:var(--ink);}
-  .cm-btn.active{background:var(--ink);color:#fff;}
+  .cm-btn.active{background:var(--inverse);color:var(--inverse-text);}
   .cm-btn + .cm-btn{border-left:1.5px solid var(--border);}
   .cm-btn.active + .cm-btn, .cm-btn.active{border-left-color:transparent;}
 
@@ -501,8 +538,8 @@
   }
   .crop-modal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding-right:34px;}
   .crop-progress{
-    font-family:var(--mono);font-size:11.5px;font-weight:700;color:#fff;
-    background:var(--ink);padding:5px 12px;border-radius:20px;
+    font-family:var(--mono);font-size:11.5px;font-weight:700;color:var(--inverse-text);
+    background:var(--inverse);padding:5px 12px;border-radius:20px;
     flex-shrink:0;white-space:nowrap;
   }
   .crop-stage{
@@ -589,21 +626,34 @@
   .preview-meta .pg-label{font-family:var(--mono);font-size:12px;color:var(--ink-soft);font-weight:600;}
 
   /* ============ Toast ============ */
+  /* Muncul dari ATAS (bukan bawah) supaya tidak ketiban fab-bar mobile &
+     lebih natural terbaca — mata user biasanya sudah di area atas layar
+     setelah klik tombol aksi. Durasi lebih lama & ada ikon status supaya
+     lebih informatif, bukan cuma teks polos yang buru-buru hilang. */
   .toast{
-    position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
-    background:var(--ink);color:#fff;
-    padding:12px 22px;border-radius:12px;
-    font-size:13px;font-weight:500;z-index:200;
+    position:fixed;top:76px;left:50%;transform:translateX(-50%) translateY(-10px);
+    background:var(--inverse);color:var(--inverse-text);
+    padding:12px 20px;border-radius:12px;
+    font-size:13px;font-weight:500;line-height:1.4;z-index:200;
     box-shadow:var(--shadow-lg);
+    display:flex;align-items:center;gap:9px;
     opacity:0;pointer-events:none;transition:.28s cubic-bezier(.4,0,.2,1);
-    max-width:90vw;text-align:center;
+    max-width:min(92vw,440px);text-align:left;
   }
-  .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px);}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .toast .toast-icn{
+    width:18px;height:18px;border-radius:50%;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+    background:var(--accent);
+  }
+  .toast .toast-icn svg{width:11px;height:11px;stroke:#fff;}
+  .toast .toast-icn.info{background:var(--ink-faint);}
+  .toast .toast-icn.warn{background:var(--warn);}
 
   /* ============ Bottom action bar (mobile) ============ */
   .fab-bar{
     position:fixed;bottom:0;left:0;right:0;
-    background:rgba(255,255,255,.9);
+    background:rgba(13,17,23,.88);
     backdrop-filter:blur(14px);
     border-top:1px solid var(--border);
     padding:12px 16px calc(12px + env(safe-area-inset-bottom));
@@ -753,7 +803,10 @@
   <button class="btn btn-dark" id="btnPreviewMobile" disabled>Cetak PDF</button>
 </div>
 
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast">
+  <span class="toast-icn" id="toastIcn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg></span>
+  <span id="toastMsg"></span>
+</div>
 
 <!-- Crop Editor Modal -->
 <div class="modal-backdrop" id="cropModal" style="display:none;">

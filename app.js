@@ -91,9 +91,25 @@ let batchDone = 0;    // sudah sampai foto ke berapa (termasuk yg lagi dibuka)
 
 const el = (id) => document.getElementById(id);
 const toastEl = el('toast');
+const toastMsgEl = el('toastMsg');
+const toastIcnEl = el('toastIcn');
 
-function toast(msg, ms=2200){
-  toastEl.textContent = msg;
+const TOAST_ICONS = {
+  success: '<path d="M20 6L9 17l-5-5"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 16v-5"/><path d="M12 8h.01"/>',
+  warn: '<path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86L1.82 18a1.5 1.5 0 001.29 2.25h17.78a1.5 1.5 0 001.29-2.25L13.71 3.86a1.5 1.5 0 00-2.42 0z"/>',
+};
+
+// Toast muncul dari ATAS layar (bukan bawah), durasi default dinaikkan
+// jadi 3600ms (dari 2200ms) supaya sempat terbaca tanpa buru-buru, dan
+// pesan panjang tidak lagi terpotong karena lebar toast sekarang bisa
+// mengikuti isi (max-width 440px) alih-alih dipaksa 1 baris. Tipe
+// ('success' default, 'info', 'warn') menentukan ikon & warna lingkaran
+// kecil di kiri teks supaya pesan lebih cepat dipahami sekilas.
+function toast(msg, ms=3600, type='success'){
+  toastMsgEl.textContent = msg;
+  toastIcnEl.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${TOAST_ICONS[type] || TOAST_ICONS.success}</svg>`;
+  toastIcnEl.className = 'toast-icn' + (type !== 'success' ? ' ' + type : '');
   toastEl.classList.add('show');
   clearTimeout(toast._t);
   toast._t = setTimeout(()=>toastEl.classList.remove('show'), ms);
@@ -112,7 +128,7 @@ function initPaperSelect(){
   sel.addEventListener('change', e=>{
     currentPaperKey = e.target.value;
     renderGrid();
-    toast(`Kertas diganti ke ${PAPER_SIZES[currentPaperKey].label}`);
+    toast(`Kertas diganti ke ${PAPER_SIZES[currentPaperKey].label}`, 3600, 'info');
   });
 }
 
@@ -156,7 +172,7 @@ function initLayoutModeSelect(){
     renderGrid();
     toast(layoutMode === 'AUTO'
       ? 'Layout otomatis — ukuran KTP mengikuti input di panel Ukuran Gambar KTP'
-      : `Layout manual: KTP dibesarkan penuh untuk ${manualCols} kolom × ${manualRows} baris`);
+      : `Layout manual: KTP dibesarkan penuh untuk ${manualCols} kolom × ${manualRows} baris`, 3600, 'info');
   });
 }
 
@@ -168,7 +184,7 @@ function initColorModeToggle(){
     btn.addEventListener('click', ()=>{
       printMode = btn.dataset.mode;
       wrap.querySelectorAll('.cm-btn').forEach(b=>b.classList.toggle('active', b===btn));
-      toast(printMode === 'BW' ? 'Mode cetak: Hitam Putih ✓' : 'Mode cetak: Warna ✓');
+      toast(printMode === 'BW' ? 'Mode cetak diubah ke Hitam Putih' : 'Mode cetak diubah ke Warna', 3600, 'info');
     });
   });
 }
@@ -193,7 +209,7 @@ function initCardSizeInputs(){
     CARD_W_CM = w; CARD_H_CM = h;
     if(changed){
       renderGrid();
-      toast(`Ukuran gambar KTP diubah ke ${w} × ${h} cm`);
+      toast(`Ukuran gambar KTP diubah ke ${w} × ${h} cm`, 3600, 'info');
     }
   }
 
@@ -286,7 +302,7 @@ function queueCropBatch(newIds){
 // otomatis diarahkan ke foto berikutnya sampai semua kebagian giliran.
 function advanceCropQueue(){
   if(!cropQueue.length){
-    if(batchTotal > 1) toast(`Semua ${batchTotal} foto sudah diproses ✓`);
+    if(batchTotal > 1) toast(`Semua ${batchTotal} foto sudah diproses, siap dicetak`);
     batchTotal = 0; batchDone = 0;
     updateCropProgress();
     return;
@@ -357,6 +373,10 @@ function renderGrid(){
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2v14a2 2 0 002 2h14M18 22V8a2 2 0 00-2-2H2"/></svg>
             <span>Crop</span>
           </button>
+          <button class="icnbtn" title="Duplikat — cetak KTP ini lebih dari 1x dalam 1 lembar" data-act="duplicate" data-id="${c.id}" ${!c.croppedDataURL ? 'disabled':''}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            <span>Duplikat</span>
+          </button>
           <button class="icnbtn" title="Putar 90°" data-act="rotate" data-id="${c.id}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 004 14.5v0A5.5 5.5 0 009.5 20H13"/></svg>
             <span>Putar</span>
@@ -387,6 +407,7 @@ function renderGrid(){
       const b = e.currentTarget;
       const id = b.dataset.id, act = b.dataset.act;
       if(act==='crop') openCropModal(id);
+      if(act==='duplicate') duplicateCard(id);
       if(act==='rotate') rotateCardResult(id);
       if(act==='enhance') runEnhance(id, b);
       if(act==='delete'){ cards = cards.filter(c=>c.id!==id); renderGrid(); }
@@ -402,6 +423,28 @@ function renderGrid(){
 
 function escapeHtml(s){
   return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Duplikat KTP yang sudah di-crop — berguna kalau user cuma punya 1 KTP
+// tapi mau cetak beberapa salinan sekaligus dalam 1 lembar (misal layout
+// 2x2 muat 4 slot, tapi cuma ada 1 KTP: duplikat 3x biar 1 lembar penuh,
+// nggak ada slot kosong yang kebuang kertas). Salinan disisipkan TEPAT
+// SETELAH kartu aslinya (bukan di ujung daftar) supaya di grid & di
+// hasil cetak posisinya berdekatan — gampang digunting berurutan.
+// rawImg (objek Image) aman di-share antar salinan karena read-only
+// setelah crop tersimpan, tidak pernah dimodifikasi lagi in-place.
+function duplicateCard(id){
+  const idx = cards.findIndex(c=>c.id===id);
+  if(idx === -1) return;
+  const original = cards[idx];
+  if(!original.croppedDataURL){ toast('Crop KTP ini dulu sebelum diduplikat', 3600, 'warn'); return; }
+  const copy = {
+    ...original,
+    id: 'k'+(idCounter++),
+  };
+  cards.splice(idx+1, 0, copy);
+  renderGrid();
+  toast('KTP diduplikat — salinan baru ditambahkan tepat di sebelahnya');
 }
 
 // Putar hasil crop (KTP yang sudah tersimpan di daftar) 90° searah
@@ -421,7 +464,7 @@ function rotateCardResult(id){
     ctx.drawImage(img, -img.width/2, -img.height/2);
     card.croppedDataURL = canvas.toDataURL('image/jpeg', 0.95);
     renderGrid();
-    toast('Foto diputar 90° ✓');
+    toast('Foto diputar 90°');
   };
   img.src = card.croppedDataURL;
 }
@@ -897,9 +940,9 @@ function drawCropOverlay(){
   // draw quad
   const q = cropQuad;
   ctx.save();
-  ctx.strokeStyle = '#15866a';
+  ctx.strokeStyle = '#238636';
   ctx.lineWidth = 2.5;
-  ctx.fillStyle = 'rgba(21,134,106,0.16)';
+  ctx.fillStyle = 'rgba(35,134,54,0.16)';
   ctx.beginPath();
   ctx.moveTo(q.tl.x,q.tl.y);
   ctx.lineTo(q.tr.x,q.tr.y);
@@ -909,7 +952,7 @@ function drawCropOverlay(){
   ctx.fill(); ctx.stroke();
 
   // corner handles
-  ctx.fillStyle = '#15866a';
+  ctx.fillStyle = '#238636';
   [q.tl,q.tr,q.br,q.bl].forEach(pt=>{
     ctx.beginPath();
     ctx.arc(pt.x, pt.y, 9, 0, Math.PI*2);
@@ -1103,7 +1146,7 @@ function saveCrop(){
   card.enhanced = false;
   closeCropModal();
   renderGrid();
-  toast('Crop tersimpan — tepi KTP diluruskan otomatis ✓');
+  toast('Crop tersimpan — tepi KTP sudah diluruskan otomatis');
 }
 
 // =========================================================
@@ -1131,7 +1174,7 @@ function runEnhance(id, btnEl){
       btnEl.disabled = false;
       btnEl.innerHTML = origSvg;
       renderGrid();
-      toast('Foto berhasil diperjelas (HD) ✓');
+      toast('Foto berhasil diperjelas — kualitas HD siap dicetak');
     };
     img.src = card.croppedDataURL;
   }, 30);
@@ -1293,7 +1336,7 @@ let previewPageIndex = 0;
 
 function openPreview(){
   const ready = cards.filter(c=>c.croppedDataURL);
-  if(!ready.length){ toast('Belum ada KTP yang di-crop'); return; }
+  if(!ready.length){ toast('Belum ada KTP yang sudah di-crop — upload & crop foto KTP dulu sebelum lanjut', 4200, 'warn'); return; }
   previewReadyCards = ready;
   previewPageIndex = 0;
   buildPreviewSummary();
@@ -1487,7 +1530,7 @@ function drawPageOfCards(ctx, pageCards, layout, pageWpx, pageHpx, onImagesReady
 // ---------- PDF export ----------
 async function downloadPDF(){
   const ready = cards.filter(c=>c.croppedDataURL);
-  if(!ready.length){ toast('Belum ada KTP yang di-crop'); return; }
+  if(!ready.length){ toast('Belum ada KTP yang sudah di-crop — upload & crop foto KTP dulu sebelum lanjut', 4200, 'warn'); return; }
 
   el('pdfProgress').style.display = 'flex';
 
@@ -1518,7 +1561,7 @@ async function downloadPDF(){
   el('pdfProgress').style.display = 'none';
   const modeSuffix = printMode === 'BW' ? '-BW' : '';
   pdf.save(`Cetak-KTP-${currentPaperKey}${modeSuffix}-${new Date().toISOString().slice(0,10)}.pdf`);
-  toast(`PDF (${PAPER_SIZES[currentPaperKey].label}) siap cetak berhasil diunduh ✓`);
+  toast(`PDF (${PAPER_SIZES[currentPaperKey].label}) berhasil diunduh — siap dicetak`, 4200);
 }
 
 // ---------- Register service worker (PWA) ----------
