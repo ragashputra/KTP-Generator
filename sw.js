@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cetak-ktp-v28'; // fitur baru: Statistik Penggunaan — tombol ikon bar-chart di header buka modal yang nampilin total "Cetak Langsung" vs "Download PDF" dari SEMUA user (shared, bukan per-device), pakai CountAPI (countapi.mileshilliard.com, gratis tanpa signup) sebagai storage counter. Tracking dipanggil fire-and-forget di downloadPDF() & printDirect(), gak pernah block/gagalin proses cetak utama kalau internet/layanan lagi down.
+const CACHE_NAME = 'cetak-ktp-v29'; // ganti backend Statistik Penggunaan dari CountAPI (pihak ketiga, ternyata gagal/gak reliable) ke Google Apps Script + Google Sheet sendiri (doGet-only, gak kena masalah CORS, datanya kebuka sbg spreadsheet biasa). Lihat gas/Code.gs utk kode backend & panduan deploy-nya. Pesan error di modal statistik juga diperjelas & diprofesionalkan bahasanya.
 const ASSETS = ['./index.html', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e=>{

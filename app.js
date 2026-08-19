@@ -40,60 +40,58 @@ let printMode = 'COLOR';
 // luar (PC/laptop, aplikasi lain, dsb).
 //
 // App ini murni static/client-side (GitHub Pages, tanpa server sendiri),
-// jadi dipakai CountAPI (https://countapi.mileshilliard.com) — layanan
-// counter gratis, tanpa signup/API-key, cukup GET request ke endpoint
-// /hit/{key} utk +1, dan /get/{key} utk baca nilai saat ini. Key counter
-// PUBLIK & global (siapa saja yang tau key-nya bisa baca/nambah), jadi
-// dipakai prefix panjang & spesifik ke app ini supaya gak tabrakan sama
-// counter aplikasi lain yang kebetulan pakai layanan yang sama.
-const STATS_API_BASE = 'https://countapi.mileshilliard.com/api/v1';
-const STATS_KEYS = {
-  printDirect: 'ktp-generator-ragashputra-v1-print-langsung',
-  downloadPdf: 'ktp-generator-ragashputra-v1-download-pdf',
-  // Nilai key ini SELALU di-"set" (bukan "hit") ke Unix timestamp saat
-  // ini setiap kali ada aktivitas cetak/download — jadi "value"-nya
-  // bukan hitungan, melainkan jam berapa aktivitas TERAKHIR terjadi,
-  // digabung dari SEMUA device/user (bukan per-device seperti localStorage).
-  lastUsedAt: 'ktp-generator-ragashputra-v1-last-used-at',
-};
+// jadi backend counter-nya pakai Google Apps Script Web App + Google
+// Sheet sebagai penyimpanan — bukan layanan counter pihak ketiga (yang
+// sempat dicoba sebelumnya tapi gagal, kemungkinan besar krn CORS tidak
+// dikonfigurasi dgn benar di layanan tsb). Keuntungan pakai Apps Script:
+//   - HANYA pakai GET request (doGet) — GET tidak kena CORS preflight
+//     sama sekali di browser, jadi jauh lebih reliable dipanggil dari
+//     fetch() dibanding endpoint yang butuh POST.
+//   - Datanya kebuka langsung sbg Google Sheet biasa yang bisa dilihat
+//     manual kapan saja, bukan cuma angka di dalam modal app ini.
+//   - Infra Google, availability jauh lebih terjamin drpd hobby-project
+//     API gratisan pihak ketiga.
+//
+// GANTI URL DI BAWAH INI dengan URL /exec hasil deploy Google Apps
+// Script kamu sendiri (lihat panduan lengkap di file gas/Code.gs).
+// Selama masih placeholder ini, fitur statistik akan gagal dgn aman
+// (fetchUsageStats mengembalikan null, trackUsage diam-diam gagal) —
+// TIDAK memengaruhi fitur cetak/download utama sama sekali.
+const STATS_API_BASE = 'GANTI_DENGAN_URL_WEB_APP_GOOGLE_APPS_SCRIPT_KAMU';
 
-// Menambah counter +1 di server (fire-and-forget) + update timestamp
-// "terakhir dipakai" bersama (juga fire-and-forget). Sengaja TIDAK pernah
+// Menambah counter +1 di server (fire-and-forget). Sengaja TIDAK pernah
 // melempar error atau memblokir alur utama (download/print harus tetap
 // selesai walau internet lagi mati atau layanan statistik down) — makanya
 // pakai .catch(()=>{}) diam-diam, bukan await di jalur kritikal.
 function trackUsage(kind){
-  const key = STATS_KEYS[kind];
-  if(!key) return;
-  fetch(`${STATS_API_BASE}/hit/${key}`).catch(()=>{});
-  const nowUnix = Math.floor(Date.now()/1000);
-  fetch(`${STATS_API_BASE}/set/${STATS_KEYS.lastUsedAt}?value=${nowUnix}`).catch(()=>{});
+  if(!STATS_API_BASE || STATS_API_BASE.startsWith('GANTI_')) return;
+  fetch(`${STATS_API_BASE}?action=hit&key=${kind}`).catch(()=>{});
 }
 
 // Mengambil kedua angka counter + timestamp terakhir dipakai dari server
-// utk ditampilkan di panel statistik. Dipanggil hanya saat panel dibuka
-// (bukan terus-menerus), supaya hemat request. Mengembalikan null
-// per-field kalau gagal fetch (mis. offline / key belum pernah dipakai
-// sama sekali), sehingga UI bisa menampilkan pesan yang jelas alih-alih
-// diam-diam menampilkan 0 yang menyesatkan.
+// (satu request lewat action=getAll) utk ditampilkan di panel statistik.
+// Dipanggil hanya saat panel dibuka (bukan terus-menerus), supaya hemat
+// request. Mengembalikan semua field null kalau gagal fetch (mis.
+// offline, atau STATS_API_BASE belum diisi), sehingga UI bisa
+// menampilkan pesan yang jelas alih-alih diam-diam menampilkan 0 yang
+// menyesatkan.
 async function fetchUsageStats(){
-  async function getValue(key){
-    try{
-      const res = await fetch(`${STATS_API_BASE}/get/${key}`);
-      if(!res.ok) return null; // termasuk 404 (key belum pernah di-hit/set sama sekali)
-      const data = await res.json();
-      return Number(data.value);
-    }catch(e){
-      return null;
-    }
+  if(!STATS_API_BASE || STATS_API_BASE.startsWith('GANTI_')){
+    return { printDirect: null, downloadPdf: null, lastUsedAt: null };
   }
-  const [printDirect, downloadPdf, lastUsedUnix] = await Promise.all([
-    getValue(STATS_KEYS.printDirect),
-    getValue(STATS_KEYS.downloadPdf),
-    getValue(STATS_KEYS.lastUsedAt),
-  ]);
-  const lastUsedAt = lastUsedUnix ? new Date(lastUsedUnix*1000).toISOString() : null;
-  return { printDirect, downloadPdf, lastUsedAt };
+  try{
+    const res = await fetch(`${STATS_API_BASE}?action=getAll`);
+    if(!res.ok) return { printDirect: null, downloadPdf: null, lastUsedAt: null };
+    const data = await res.json();
+    if(data.error) return { printDirect: null, downloadPdf: null, lastUsedAt: null };
+    return {
+      printDirect: typeof data.printDirect === 'number' ? data.printDirect : null,
+      downloadPdf: typeof data.downloadPdf === 'number' ? data.downloadPdf : null,
+      lastUsedAt: data.lastUsedAt || null,
+    };
+  }catch(e){
+    return { printDirect: null, downloadPdf: null, lastUsedAt: null };
+  }
 }
 
 
@@ -600,6 +598,7 @@ async function loadStatsIntoModal(){
   pdfEl.classList.remove('stats-num-error');
   lastUsedEl.textContent = 'Memuat data statistik...';
 
+  const notConfigured = !STATS_API_BASE || STATS_API_BASE.startsWith('GANTI_');
   const stats = await fetchUsageStats();
 
   if(stats.printDirect === null){
@@ -616,12 +615,14 @@ async function loadStatsIntoModal(){
     pdfEl.textContent = stats.downloadPdf.toLocaleString('id-ID');
   }
 
-  if(stats.printDirect === null && stats.downloadPdf === null){
-    lastUsedEl.textContent = 'Gagal memuat statistik — cek koneksi internet lalu coba lagi.';
+  if(notConfigured){
+    lastUsedEl.textContent = 'Statistik belum aktif — backend penyimpanan data belum dikonfigurasi.';
+  } else if(stats.printDirect === null && stats.downloadPdf === null){
+    lastUsedEl.textContent = 'Tidak dapat memuat data statistik saat ini. Periksa koneksi internet Anda, lalu coba lagi.';
   } else if(stats.lastUsedAt){
-    lastUsedEl.textContent = `Terakhir dipakai: ${formatRelativeTime(stats.lastUsedAt)}`;
+    lastUsedEl.textContent = `Terakhir digunakan ${formatRelativeTime(stats.lastUsedAt)}`;
   } else {
-    lastUsedEl.textContent = 'Belum ada aktivitas cetak/download yang tercatat.';
+    lastUsedEl.textContent = 'Belum ada aktivitas cetak atau unduh yang tercatat.';
   }
 
   refreshBtn.classList.remove('is-loading');
