@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cetak-ktp-v26'; // fitur baru: tombol "Duplikat" di tiap KTP yang sudah di-crop — bikin salinan persis di sebelah aslinya di daftar (dan otomatis ikut tercetak berdekatan di lembar F4), supaya user yang cuma punya 1 KTP tapi mau isi penuh 1 lembar (misal 4 slot di layout 2x2) tinggal duplikat berkali-kali tanpa upload ulang
+const CACHE_NAME = 'cetak-ktp-v27'; // fitur baru: tombol "Cetak Langsung" di modal Preview Cetak — pakai window.print() browser native, jadi begitu diklik langsung muncul dialog pilih printer sesuai yang terpasang/terbaca di PC/laptop user, tanpa perlu download PDF & buka file terpisah dulu. Ukuran & orientasi kertas fisik diinject dinamis via CSS @page (mm persis) sesuai kertas yang dipilih user. Render halaman pakai fungsi drawPageOfCards yang sama dgn export PDF, jadi hasilnya identik. Download PDF tetap ada sebagai opsi kedua.
 const ASSETS = ['./index.html', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e=>{

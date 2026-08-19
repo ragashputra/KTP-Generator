@@ -1532,6 +1532,7 @@ async function downloadPDF(){
   const ready = cards.filter(c=>c.croppedDataURL);
   if(!ready.length){ toast('Belum ada KTP yang sudah di-crop — upload & crop foto KTP dulu sebelum lanjut', 4200, 'warn'); return; }
 
+  el('pdfProgress').innerHTML = '<span class="dot"></span> Menyiapkan PDF...';
   el('pdfProgress').style.display = 'flex';
 
   const layout = computeLayout();
@@ -1563,6 +1564,80 @@ async function downloadPDF(){
   pdf.save(`Cetak-KTP-${currentPaperKey}${modeSuffix}-${new Date().toISOString().slice(0,10)}.pdf`);
   toast(`PDF (${PAPER_SIZES[currentPaperKey].label}) berhasil diunduh — siap dicetak`, 4200);
 }
+
+// ---------- Cetak Langsung (window.print, tanpa PDF) ----------
+// Alur: render tiap halaman ke <canvas> pakai fungsi drawPageOfCards yang
+// SAMA dengan yang dipakai downloadPDF() — jadi hasil visualnya identik
+// (posisi foto, strip No. HP, garis potong, dst) — cuma bedanya di sini
+// hasilnya jadi <img> yang disusun di #printArea, lalu window.print()
+// dipanggil supaya browser langsung munculkan dialog pilih printer bawaan
+// OS (Windows/Mac/dll — mengikuti printer yang terpasang & terbaca di
+// komputer/laptop user), tanpa perlu buka file PDF terpisah dulu.
+//
+// Ukuran & orientasi kertas fisik diatur lewat CSS @page yang di-inject
+// dinamis ke #printPageStyle sesuai kertas yang dipilih user (mm persis,
+// bukan estimasi) — driver printer yang mendukung custom size akan
+// otomatis menyarankan ukuran ini di dialognya.
+async function printDirect(){
+  const ready = cards.filter(c=>c.croppedDataURL);
+  if(!ready.length){ toast('Belum ada KTP yang sudah di-crop — upload & crop foto KTP dulu sebelum lanjut', 4200, 'warn'); return; }
+
+  const btn = document.querySelector('#previewModal .btn-primary');
+  if(btn) btn.disabled = true;
+  el('pdfProgress').innerHTML = '<span class="dot"></span> Menyiapkan halaman cetak...';
+  el('pdfProgress').style.display = 'flex';
+
+  const layout = computeLayout();
+  const pageWpx = Math.round(layout.paperW*MM_TO_PX);
+  const pageHpx = Math.round(layout.paperH*MM_TO_PX);
+  const totalPages = Math.ceil(ready.length/layout.perPage);
+
+  const printArea = el('printArea');
+  printArea.innerHTML = '';
+
+  for(let p=0; p<totalPages; p++){
+    const pageCards = ready.slice(p*layout.perPage, (p+1)*layout.perPage);
+    const canvas = document.createElement('canvas');
+    canvas.width = pageWpx; canvas.height = pageHpx;
+    const ctx = canvas.getContext('2d');
+
+    await new Promise(resolve=>{
+      drawPageOfCards(ctx, pageCards, layout, pageWpx, pageHpx, resolve);
+    });
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.97);
+    const pageDiv = document.createElement('div');
+    pageDiv.className = 'print-page';
+    const img = document.createElement('img');
+    img.src = imgData;
+    pageDiv.appendChild(img);
+    printArea.appendChild(pageDiv);
+  }
+
+  // Ukuran kertas fisik akurat (mm) + orientasi otomatis, margin 0 karena
+  // margin cetak sudah diperhitungkan di dalam gambar halaman itu sendiri
+  // (lihat MARGIN_MM di computeLayout) — kalau browser juga nambah margin
+  // sendiri, hasil cetak jadi dobel-margin & tidak center.
+  el('printPageStyle').textContent =
+    `@page{size:${layout.paperW}mm ${layout.paperH}mm;margin:0;}`;
+
+  el('pdfProgress').style.display = 'none';
+  if(btn) btn.disabled = false;
+
+  // Beri browser satu frame untuk selesai me-layout #printArea sebelum
+  // dialog print dibuka, supaya gambar halaman pertama tidak terpotong
+  // putih di preview print (race condition kalau print() dipanggil
+  // langsung sesudah DOM diisi).
+  requestAnimationFrame(()=> requestAnimationFrame(()=>{
+    window.print();
+  }));
+}
+
+// Setelah dialog print ditutup (baik jadi print atau dibatalkan), bersihkan
+// #printArea supaya tidak menyimpan gambar besar di memori tanpa guna.
+window.addEventListener('afterprint', ()=>{
+  el('printArea').innerHTML = '';
+});
 
 // ---------- Register service worker (PWA) ----------
 if('serviceWorker' in navigator){
