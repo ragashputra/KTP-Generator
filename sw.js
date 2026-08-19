@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cetak-ktp-v27'; // fitur baru: tombol "Cetak Langsung" di modal Preview Cetak — pakai window.print() browser native, jadi begitu diklik langsung muncul dialog pilih printer sesuai yang terpasang/terbaca di PC/laptop user, tanpa perlu download PDF & buka file terpisah dulu. Ukuran & orientasi kertas fisik diinject dinamis via CSS @page (mm persis) sesuai kertas yang dipilih user. Render halaman pakai fungsi drawPageOfCards yang sama dgn export PDF, jadi hasilnya identik. Download PDF tetap ada sebagai opsi kedua.
+const CACHE_NAME = 'cetak-ktp-v28'; // fitur baru: Statistik Penggunaan — tombol ikon bar-chart di header buka modal yang nampilin total "Cetak Langsung" vs "Download PDF" dari SEMUA user (shared, bukan per-device), pakai CountAPI (countapi.mileshilliard.com, gratis tanpa signup) sebagai storage counter. Tracking dipanggil fire-and-forget di downloadPDF() & printDirect(), gak pernah block/gagalin proses cetak utama kalau internet/layanan lagi down.
 const ASSETS = ['./index.html', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e=>{

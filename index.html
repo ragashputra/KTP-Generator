@@ -130,6 +130,18 @@
     flex-shrink:0;
   }
   .header-actions{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+  .stats-btn{
+    width:34px;height:34px;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+    border-radius:50%;
+    border:1px solid var(--border);
+    background:var(--surface);
+    color:var(--ink-soft);
+    cursor:pointer;transition:.15s;
+  }
+  .stats-btn svg{width:16px;height:16px;}
+  .stats-btn:hover{border-color:var(--accent);color:var(--accent-hover);background:var(--accent-soft);}
+  .stats-btn:active{transform:scale(.94);}
   @media (max-width:520px){
     .dropzone span{display:none;}
     .dropzone{padding:8px;}
@@ -595,6 +607,45 @@
   .modal-close:hover{background:var(--surface);border-color:var(--border-strong);}
   .modal-close svg{width:16px;height:16px;stroke:var(--ink);}
 
+  /* ============ Statistik Penggunaan modal ============ */
+  .stats-modal{max-width:460px;}
+  .stats-grid{
+    display:grid;grid-template-columns:1fr 1fr;gap:12px;
+    margin-bottom:14px;
+  }
+  .stats-card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius-md);
+    padding:18px 14px;
+    display:flex;flex-direction:column;align-items:center;gap:8px;
+    text-align:center;
+  }
+  .stats-card-icon{
+    width:36px;height:36px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    flex-shrink:0;
+  }
+  .stats-card-icon svg{width:17px;height:17px;}
+  .stats-icon-print{background:var(--accent-soft);color:var(--accent-hover);}
+  .stats-icon-pdf{background:rgba(88,166,255,.14);color:#58a6ff;}
+  .stats-card-num{
+    font-family:var(--mono);font-size:26px;font-weight:800;color:var(--ink);
+    line-height:1;font-variant-numeric:tabular-nums;
+  }
+  .stats-card-num.stats-num-error{font-size:13px;font-weight:600;color:var(--ink-faint);}
+  .stats-card-label{font-size:12px;font-weight:600;color:var(--ink-soft);}
+  .stats-footer{
+    display:flex;align-items:center;gap:8px;
+    font-size:12px;color:var(--ink-faint);
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:var(--radius-sm);
+    padding:10px 12px;
+  }
+  .stats-footer svg{width:14px;height:14px;flex-shrink:0;stroke:var(--ink-faint);}
+  #btnRefreshStats.is-loading svg{animation:spin .8s linear infinite;}
+
   /* ============ Preview modal (print layout) ============ */
   .preview-modal{max-width:640px;}
   .sheet-wrap{
@@ -744,6 +795,9 @@
       <input type="file" id="fileInput" accept="image/*" multiple>
     </div>
     <div class="count" id="headerCount">0 KTP</div>
+    <button type="button" class="stats-btn" id="btnOpenStats" title="Statistik Penggunaan">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+    </button>
   </div>
 </header>
 
@@ -922,6 +976,46 @@
     </div>
   </div>
 </div>
+
+<!-- Statistik Penggunaan Modal -->
+<div class="modal-backdrop" id="statsModal" style="display:none;" onclick="if(event.target===this) closeStatsModal()">
+  <div class="modal stats-modal">
+    <button class="modal-close" onclick="closeStatsModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    <h3>Statistik Penggunaan</h3>
+    <p class="hint">Gabungan dari semua user yang pakai app ini — bukan cuma kamu. Berguna buat lihat apakah orang masih cetak manual dari luar (download PDF) atau sudah pakai Cetak Langsung di dalam app.</p>
+
+    <div class="stats-grid" id="statsGrid">
+      <div class="stats-card">
+        <div class="stats-card-icon stats-icon-print">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        </div>
+        <div class="stats-card-num" id="statPrintDirect">–</div>
+        <div class="stats-card-label">Cetak Langsung</div>
+      </div>
+      <div class="stats-card">
+        <div class="stats-card-icon stats-icon-pdf">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+        </div>
+        <div class="stats-card-num" id="statDownloadPdf">–</div>
+        <div class="stats-card-label">Download PDF</div>
+      </div>
+    </div>
+
+    <div class="stats-footer" id="statsFooter">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+      <span id="statsLastUsed">Memuat data statistik...</span>
+    </div>
+
+    <div class="crop-controls">
+      <button class="btn btn-ghost" id="btnRefreshStats" onclick="loadStatsIntoModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        Muat Ulang
+      </button>
+      <button class="btn btn-primary" onclick="closeStatsModal()">Tutup</button>
+    </div>
+  </div>
+</div>
+
 
 <!-- Zoom Preview Modal (tap KTP utk lihat hasil crop besar) -->
 <div class="modal-backdrop" id="zoomModal" style="display:none;" onclick="if(event.target===this) closeZoomModal()">

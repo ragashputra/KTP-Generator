@@ -31,6 +31,72 @@ let manualCols = 2, manualRows = 2;
 // putih — hemat tinta printer, cukup buat verifikasi identitas).
 let printMode = 'COLOR';
 
+// =========================================================
+// STATISTIK PENGGUNAAN (shared, semua device/user digabung)
+// =========================================================
+// Tujuan: supaya maintainer bisa lihat dari SEMUA user yang pakai app
+// ini, berapa yang beneran pakai "Cetak Langsung" (window.print di
+// dalam app) vs berapa yang cuma "Download PDF" lalu print manual dari
+// luar (PC/laptop, aplikasi lain, dsb).
+//
+// App ini murni static/client-side (GitHub Pages, tanpa server sendiri),
+// jadi dipakai CountAPI (https://countapi.mileshilliard.com) — layanan
+// counter gratis, tanpa signup/API-key, cukup GET request ke endpoint
+// /hit/{key} utk +1, dan /get/{key} utk baca nilai saat ini. Key counter
+// PUBLIK & global (siapa saja yang tau key-nya bisa baca/nambah), jadi
+// dipakai prefix panjang & spesifik ke app ini supaya gak tabrakan sama
+// counter aplikasi lain yang kebetulan pakai layanan yang sama.
+const STATS_API_BASE = 'https://countapi.mileshilliard.com/api/v1';
+const STATS_KEYS = {
+  printDirect: 'ktp-generator-ragashputra-v1-print-langsung',
+  downloadPdf: 'ktp-generator-ragashputra-v1-download-pdf',
+  // Nilai key ini SELALU di-"set" (bukan "hit") ke Unix timestamp saat
+  // ini setiap kali ada aktivitas cetak/download — jadi "value"-nya
+  // bukan hitungan, melainkan jam berapa aktivitas TERAKHIR terjadi,
+  // digabung dari SEMUA device/user (bukan per-device seperti localStorage).
+  lastUsedAt: 'ktp-generator-ragashputra-v1-last-used-at',
+};
+
+// Menambah counter +1 di server (fire-and-forget) + update timestamp
+// "terakhir dipakai" bersama (juga fire-and-forget). Sengaja TIDAK pernah
+// melempar error atau memblokir alur utama (download/print harus tetap
+// selesai walau internet lagi mati atau layanan statistik down) — makanya
+// pakai .catch(()=>{}) diam-diam, bukan await di jalur kritikal.
+function trackUsage(kind){
+  const key = STATS_KEYS[kind];
+  if(!key) return;
+  fetch(`${STATS_API_BASE}/hit/${key}`).catch(()=>{});
+  const nowUnix = Math.floor(Date.now()/1000);
+  fetch(`${STATS_API_BASE}/set/${STATS_KEYS.lastUsedAt}?value=${nowUnix}`).catch(()=>{});
+}
+
+// Mengambil kedua angka counter + timestamp terakhir dipakai dari server
+// utk ditampilkan di panel statistik. Dipanggil hanya saat panel dibuka
+// (bukan terus-menerus), supaya hemat request. Mengembalikan null
+// per-field kalau gagal fetch (mis. offline / key belum pernah dipakai
+// sama sekali), sehingga UI bisa menampilkan pesan yang jelas alih-alih
+// diam-diam menampilkan 0 yang menyesatkan.
+async function fetchUsageStats(){
+  async function getValue(key){
+    try{
+      const res = await fetch(`${STATS_API_BASE}/get/${key}`);
+      if(!res.ok) return null; // termasuk 404 (key belum pernah di-hit/set sama sekali)
+      const data = await res.json();
+      return Number(data.value);
+    }catch(e){
+      return null;
+    }
+  }
+  const [printDirect, downloadPdf, lastUsedUnix] = await Promise.all([
+    getValue(STATS_KEYS.printDirect),
+    getValue(STATS_KEYS.downloadPdf),
+    getValue(STATS_KEYS.lastUsedAt),
+  ]);
+  const lastUsedAt = lastUsedUnix ? new Date(lastUsedUnix*1000).toISOString() : null;
+  return { printDirect, downloadPdf, lastUsedAt };
+}
+
+
 // Ukuran kertas yang didukung (mm, portrait) — dikelompokkan seperti
 // dropdown ukuran kertas di Windows / Word / Excel. F4 = default
 // (paling umum dipakai kantor/percetakan Indonesia untuk KTP).
@@ -497,6 +563,72 @@ function openZoomModal(id){
 function closeZoomModal(){
   el('zoomModal').style.display = 'none';
 }
+
+// ---------- Modal Statistik Penggunaan ----------
+function formatRelativeTime(isoString){
+  const then = new Date(isoString);
+  const diffMs = Date.now() - then.getTime();
+  const diffMin = Math.floor(diffMs/60000);
+  if(diffMin < 1) return 'baru saja';
+  if(diffMin < 60) return `${diffMin} menit lalu`;
+  const diffHour = Math.floor(diffMin/60);
+  if(diffHour < 24) return `${diffHour} jam lalu`;
+  const diffDay = Math.floor(diffHour/24);
+  if(diffDay < 30) return `${diffDay} hari lalu`;
+  return then.toLocaleDateString('id-ID', { day:'numeric', month:'long', year:'numeric' });
+}
+
+function openStatsModal(){
+  el('statsModal').style.display = 'flex';
+  loadStatsIntoModal();
+}
+function closeStatsModal(){
+  el('statsModal').style.display = 'none';
+}
+
+async function loadStatsIntoModal(){
+  const refreshBtn = el('btnRefreshStats');
+  const printEl = el('statPrintDirect');
+  const pdfEl = el('statDownloadPdf');
+  const lastUsedEl = el('statsLastUsed');
+
+  refreshBtn.classList.add('is-loading');
+  refreshBtn.disabled = true;
+  printEl.textContent = '–';
+  printEl.classList.remove('stats-num-error');
+  pdfEl.textContent = '–';
+  pdfEl.classList.remove('stats-num-error');
+  lastUsedEl.textContent = 'Memuat data statistik...';
+
+  const stats = await fetchUsageStats();
+
+  if(stats.printDirect === null){
+    printEl.textContent = '—';
+    printEl.classList.add('stats-num-error');
+  } else {
+    printEl.textContent = stats.printDirect.toLocaleString('id-ID');
+  }
+
+  if(stats.downloadPdf === null){
+    pdfEl.textContent = '—';
+    pdfEl.classList.add('stats-num-error');
+  } else {
+    pdfEl.textContent = stats.downloadPdf.toLocaleString('id-ID');
+  }
+
+  if(stats.printDirect === null && stats.downloadPdf === null){
+    lastUsedEl.textContent = 'Gagal memuat statistik — cek koneksi internet lalu coba lagi.';
+  } else if(stats.lastUsedAt){
+    lastUsedEl.textContent = `Terakhir dipakai: ${formatRelativeTime(stats.lastUsedAt)}`;
+  } else {
+    lastUsedEl.textContent = 'Belum ada aktivitas cetak/download yang tercatat.';
+  }
+
+  refreshBtn.classList.remove('is-loading');
+  refreshBtn.disabled = false;
+}
+
+el('btnOpenStats').addEventListener('click', openStatsModal);
 
 // KTP dicetak apa adanya sesuai hasil crop (orientasi diatur manual
 // oleh user lewat tombol putar kiri/kanan di editor crop).
@@ -1563,6 +1695,7 @@ async function downloadPDF(){
   const modeSuffix = printMode === 'BW' ? '-BW' : '';
   pdf.save(`Cetak-KTP-${currentPaperKey}${modeSuffix}-${new Date().toISOString().slice(0,10)}.pdf`);
   toast(`PDF (${PAPER_SIZES[currentPaperKey].label}) berhasil diunduh — siap dicetak`, 4200);
+  trackUsage('downloadPdf');
 }
 
 // ---------- Cetak Langsung (window.print, tanpa PDF) ----------
@@ -1629,6 +1762,7 @@ async function printDirect(){
   // putih di preview print (race condition kalau print() dipanggil
   // langsung sesudah DOM diisi).
   requestAnimationFrame(()=> requestAnimationFrame(()=>{
+    trackUsage('printDirect');
     window.print();
   }));
 }
