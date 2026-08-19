@@ -2,10 +2,12 @@
  * Cetak KTP Generator — Backend Statistik Penggunaan
  * ===================================================
  * Web App sederhana pakai Google Apps Script + Google Sheets sebagai
- * database counter. Sengaja HANYA pakai doGet (bukan doPost) karena
- * fetch() dari browser ke Apps Script Web App sering kena masalah CORS
- * kalau pakai POST — GET request tidak kena preflight CORS sama sekali,
- * jadi jauh lebih reliable dipanggil langsung dari app.js di browser.
+ * database counter. Sengaja HANYA pakai doGet (bukan doPost) karena GET
+ * tidak memicu PREFLIGHT request (OPTIONS) seperti POST — tapi ini cuma
+ * separuh cerita: response-nya TETAP wajib membawa header
+ * Access-Control-Allow-Origin, kalau tidak browser akan tetap memblokir
+ * fetch() membaca hasilnya (lihat jsonResponse() di bawah — sudah
+ * ditangani di versi ini).
  *
  * CARA DEPLOY (lakukan sekali saja):
  * 1. Buka https://script.google.com/ → New Project
@@ -26,9 +28,23 @@
  * 10. Tempel URL itu ke STATS_API_BASE di app.js (gantikan URL CountAPI lama)
  *
  * PENTING kalau nanti edit script ini lagi:
- * Setiap kali ubah kode di sini, harus bikin "New deployment" lagi (bukan
- * cuma Save) supaya perubahan kepakai di URL /exec yang sudah aktif —
- * ini perilaku standar Apps Script, gampang kelupaan.
+ * Untuk update kode TANPA mengubah URL /exec yang sudah aktif (supaya
+ * app.js gak perlu diedit lagi), JANGAN klik "New deployment" — itu
+ * bikin URL BARU yang berbeda. Caranya yang benar:
+ * 1. Deploy → Manage deployments
+ * 2. Pilih deployment yang aktif → klik ikon pensil (Edit)
+ * 3. Di bagian "Version", pilih "New version"
+ * 4. Klik Deploy
+ * URL /exec tetap sama persis, hanya kode di baliknya yang ke-update.
+ *
+ * ⚠️ CATATAN FIX (kalau sebelumnya panel Statistik selalu gagal muat):
+ * Versi Code.gs ini menambahkan header "Access-Control-Allow-Origin: *"
+ * di jsonResponse() — tanpa header itu, browser MEMBLOKIR fetch() dari
+ * app.js membaca hasil response (walau request-nya sendiri sukses jalan
+ * & data tetap ke-update di Sheet, cuma browsernya yang nolak baca
+ * hasilnya). Update script ini pakai langkah "New version" di atas
+ * (BUKAN "New deployment") supaya URL /exec yang sudah dipakai di
+ * app.js tetap sama & langsung kepakai kode barunya.
  *
  * Data tersimpan di Google Sheet yang otomatis dibuat script ini sendiri
  * (sheet "Stats") di dalam file/project yang sama — kamu bisa buka lewat
@@ -155,7 +171,17 @@ function handleGetAll() {
 }
 
 function jsonResponse(obj) {
+  // PENTING: tanpa header CORS ini, fetch() dari browser (GitHub Pages,
+  // dsb) akan GAGAL walau request-nya sendiri sukses dieksekusi di
+  // server (data tetap ke-update di Sheet!). GET memang tidak kena
+  // PREFLIGHT (request OPTIONS terpisah), tapi response-nya tetap wajib
+  // punya Access-Control-Allow-Origin supaya browser MENGIZINKAN
+  // JavaScript membaca isi response tsb — dua hal yang berbeda. Tanpa
+  // header ini, browser melempar "TypeError: Failed to fetch" yang
+  // keliatannya kayak masalah internet, padahal sebenarnya cuma header
+  // response yang kurang.
   return ContentService
     .createTextOutput(JSON.stringify(obj))
-    .setMimeType(ContentService.MimeType.JSON);
+    .setMimeType(ContentService.MimeType.JSON)
+    .setHeaders({ 'Access-Control-Allow-Origin': '*' });
 }

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cetak-ktp-v30'; // STATS_API_BASE di app.js sudah diisi URL Web App Google Apps Script yang sudah di-deploy (backend statistik penggunaan resmi aktif, gak lagi placeholder).
+const CACHE_NAME = 'cetak-ktp-v31'; // FIX panel Statistik: Code.gs sekarang kirim header Access-Control-Allow-Origin (akar masalah fetch selalu gagal = CORS, bukan koneksi internet user) — lihat Code.gs utk cara update deployment tanpa ganti URL. Pesan error & console.warn di app.js juga diperjelas.
 const ASSETS = ['./index.html', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e=>{

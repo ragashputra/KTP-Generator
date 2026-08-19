@@ -81,15 +81,25 @@ async function fetchUsageStats(){
   }
   try{
     const res = await fetch(`${STATS_API_BASE}?action=getAll`);
-    if(!res.ok) return { printDirect: null, downloadPdf: null, lastUsedAt: null };
+    if(!res.ok){
+      console.warn(`[Statistik] Server merespons HTTP ${res.status} (bukan 200). Cek apakah deployment Apps Script masih aktif & "Who has access" = Anyone.`);
+      return { printDirect: null, downloadPdf: null, lastUsedAt: null };
+    }
     const data = await res.json();
-    if(data.error) return { printDirect: null, downloadPdf: null, lastUsedAt: null };
+    if(data.error){
+      console.warn('[Statistik] Server membalas dengan error:', data.error);
+      return { printDirect: null, downloadPdf: null, lastUsedAt: null };
+    }
     return {
       printDirect: typeof data.printDirect === 'number' ? data.printDirect : null,
       downloadPdf: typeof data.downloadPdf === 'number' ? data.downloadPdf : null,
       lastUsedAt: data.lastUsedAt || null,
     };
   }catch(e){
+    // Ini nyaris selalu berarti fetch() diblokir browser (CORS: response
+    // dari Apps Script tidak membawa header Access-Control-Allow-Origin),
+    // BUKAN masalah internet user — lihat catatan CORS di Code.gs.
+    console.warn('[Statistik] fetch() gagal — kemungkinan besar CORS (response Apps Script belum ada header Access-Control-Allow-Origin) atau URL STATS_API_BASE salah/deployment nonaktif. Detail:', e);
     return { printDirect: null, downloadPdf: null, lastUsedAt: null };
   }
 }
@@ -618,7 +628,7 @@ async function loadStatsIntoModal(){
   if(notConfigured){
     lastUsedEl.textContent = 'Statistik belum aktif — backend penyimpanan data belum dikonfigurasi.';
   } else if(stats.printDirect === null && stats.downloadPdf === null){
-    lastUsedEl.textContent = 'Tidak dapat memuat data statistik saat ini. Periksa koneksi internet Anda, lalu coba lagi.';
+    lastUsedEl.textContent = 'Gagal memuat data dari server statistik. Ini biasanya bukan soal koneksi internet kamu — kemungkinan besar konfigurasi backend-nya (deployment Apps Script) yang perlu dicek. Coba "Muat Ulang", atau hubungi pengelola aplikasi kalau terus gagal.';
   } else if(stats.lastUsedAt){
     lastUsedEl.textContent = `Terakhir digunakan ${formatRelativeTime(stats.lastUsedAt)}`;
   } else {
