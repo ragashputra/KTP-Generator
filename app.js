@@ -1,6 +1,6 @@
 /* =========================================================
    Cetak KTP Generator — CDN Internal Tools
-   - Auto-detect & crop tepi kartu KTP dari foto (deteksi kontur +
+   - Auto-detect & crop tepi KTP dari foto (deteksi kontur +
      perspective unwarp, bukan cuma bounding-box)
    - Enhance/HD-kan foto buram (sharpen + upscale + contrast, on-device)
    - Rotasi manual (putar kiri/kanan 90°) sebelum crop — mirip Windows
@@ -16,14 +16,14 @@
 let CARD_W_CM = 13.5;   // sisi panjang KTP
 let CARD_H_CM = 9.0;    // sisi pendek KTP
 const DEFAULT_CARD_W_CM = 13.5, DEFAULT_CARD_H_CM = 9.0;
-const MARGIN_MM = 3; // margin tepi kertas atas/bawah/kiri/kanan — dibuat tipis (0.3cm) supaya lebih banyak kartu muat per lembar
+const MARGIN_MM = 3; // margin tepi kertas atas/bawah/kiri/kanan — dibuat tipis (0.3cm) supaya lebih banyak KTP muat per lembar
 const GAP_MM = 5;
-const PHONE_SPACE_MM = 12; // lebar strip di SAMPING KANAN kartu (bukan di bawah lagi) utk tulis no HP pakai pulpen — tegak sejajar tinggi foto. Dijaga cukup kecil (1.2cm) supaya kartu ukuran KTP asli (13.5x9) tetap muat 2 kolom di F4 (total lebar 2x(9cm+1.2cm)+gap harus <= lebar kertas).
+const PHONE_SPACE_MM = 12; // lebar strip di SAMPING KANAN KTP (bukan di bawah lagi) utk tulis no HP pakai pulpen — tegak sejajar tinggi foto. Dijaga cukup kecil (1.2cm) supaya KTP ukuran asli (13.5x9) tetap muat 2 kolom di F4 (total lebar 2x(9cm+1.2cm)+gap harus <= lebar kertas).
 
 // Layout kolom x baris cetak: "AUTO" = dihitung otomatis (maksimal muat
-// sesuai ukuran kertas & ukuran kartu), atau user bisa pilih manual
-// lewat dropdown (mis. 1x1 kalau mau 1 kartu besar penuh 1 halaman,
-// 2x3 kalau mau kartu lebih kecil tapi lebih banyak per lembar, dst).
+// sesuai ukuran kertas & ukuran KTP), atau user bisa pilih manual
+// lewat dropdown (mis. 1x1 kalau mau 1 KTP besar penuh 1 halaman,
+// 2x3 kalau mau KTP lebih kecil tapi lebih banyak per lembar, dst).
 let layoutMode = 'AUTO';   // 'AUTO' | 'MANUAL'
 let manualCols = 2, manualRows = 2;
 
@@ -85,7 +85,7 @@ let cropBaseFitW = 0, cropBaseFitH = 0; // canvas CSS size (px) at 100% zoom, i.
 // Antrian crop utk upload banyak sekaligus: foto dibuka satu per satu di
 // editor crop, URUT dari yang pertama diupload sampai yang terakhir,
 // bukan cuma foto terakhir doang yang kebuka (bug lama).
-let cropQueue = [];   // id kartu yang menunggu giliran di-crop
+let cropQueue = [];   // id KTP yang menunggu giliran di-crop
 let batchTotal = 0;   // jumlah total foto di batch upload saat ini
 let batchDone = 0;    // sudah sampai foto ke berapa (termasuk yg lagi dibuka)
 
@@ -118,19 +118,19 @@ function initPaperSelect(){
 
 function paper(){ return PAPER_SIZES[currentPaperKey]; }
 
-// ---------- Layout kartu/lembar selector (Otomatis vs Manual kolom x baris) ----------
-// Preset manual yang ditawarkan mengikuti pola umum tata-letak cetak kartu
-// (mirip pilihan "kartu per lembar" di software label printing) — dari 1
-// kartu penuh 1 halaman (paling besar, mentok margin) sampai 3x4 (kartu
+// ---------- Layout KTP/lembar selector (Otomatis vs Manual kolom x baris) ----------
+// Preset manual yang ditawarkan mengikuti pola umum tata-letak cetak KTP
+// (mirip pilihan "KTP per lembar" di software label printing) — dari 1
+// KTP penuh 1 halaman (paling besar, mentok margin) sampai 3x4 (KTP
 // kecil, banyak per lembar).
 const LAYOUT_PRESETS = [
-  { key:'1x1', cols:1, rows:1, label:'1 kartu / lembar (penuh 1 halaman)' },
-  { key:'1x2', cols:1, rows:2, label:'2 kartu / lembar (1 kolom × 2 baris)' },
-  { key:'2x1', cols:2, rows:1, label:'2 kartu / lembar (2 kolom × 1 baris)' },
-  { key:'2x2', cols:2, rows:2, label:'4 kartu / lembar (2 kolom × 2 baris)' },
-  { key:'2x3', cols:2, rows:3, label:'6 kartu / lembar (2 kolom × 3 baris)' },
-  { key:'3x3', cols:3, rows:3, label:'9 kartu / lembar (3 kolom × 3 baris)' },
-  { key:'3x4', cols:3, rows:4, label:'12 kartu / lembar (3 kolom × 4 baris)' },
+  { key:'1x1', cols:1, rows:1, label:'1 KTP / lembar (penuh 1 halaman)' },
+  { key:'1x2', cols:1, rows:2, label:'2 KTP / lembar (1 kolom × 2 baris)' },
+  { key:'2x1', cols:2, rows:1, label:'2 KTP / lembar (2 kolom × 1 baris)' },
+  { key:'2x2', cols:2, rows:2, label:'4 KTP / lembar (2 kolom × 2 baris)' },
+  { key:'2x3', cols:2, rows:3, label:'6 KTP / lembar (2 kolom × 3 baris)' },
+  { key:'3x3', cols:3, rows:3, label:'9 KTP / lembar (3 kolom × 3 baris)' },
+  { key:'3x4', cols:3, rows:4, label:'12 KTP / lembar (3 kolom × 4 baris)' },
 ];
 let selectedLayoutKey = 'AUTO';
 
@@ -141,7 +141,7 @@ function initLayoutModeSelect(){
   const manualOpts = LAYOUT_PRESETS.map(p=>
     `<option value="${p.key}">${p.label}</option>`
   ).join('');
-  sel.innerHTML = `${autoOpt}<optgroup label="Manual — kartu dibesarkan penuh sampai margin">${manualOpts}</optgroup>`;
+  sel.innerHTML = `${autoOpt}<optgroup label="Manual — KTP dibesarkan penuh sampai margin">${manualOpts}</optgroup>`;
 
   sel.addEventListener('change', e=>{
     selectedLayoutKey = e.target.value;
@@ -155,8 +155,8 @@ function initLayoutModeSelect(){
     }
     renderGrid();
     toast(layoutMode === 'AUTO'
-      ? 'Layout otomatis — ukuran kartu mengikuti input di panel Ukuran Gambar KTP'
-      : `Layout manual: kartu dibesarkan penuh untuk ${manualCols} kolom × ${manualRows} baris`);
+      ? 'Layout otomatis — ukuran KTP mengikuti input di panel Ukuran Gambar KTP'
+      : `Layout manual: KTP dibesarkan penuh untuk ${manualCols} kolom × ${manualRows} baris`);
   });
 }
 
@@ -176,7 +176,7 @@ function initColorModeToggle(){
 // ---------- Ukuran gambar KTP (editable, default 13.5x9cm) ----------
 // Mengubah nilai ini hanya berlaku utk foto yang di-crop SETELAH
 // perubahan (rasio dibakar ke gambar saat "Simpan Crop") dan utk layout
-// cetak halaman baru — bukan me-retroaktif kartu yang udah kepalang
+// cetak halaman baru — bukan me-retroaktif KTP yang udah kepalang
 // di-crop dengan rasio lama.
 function initCardSizeInputs(){
   const wInp = el('cardWInput'), hInp = el('cardHInput'), resetBtn = el('btnResetCardSize');
@@ -230,7 +230,7 @@ fileInput.addEventListener('change', e=>{ handleFiles([...e.target.files]); file
 
 function handleFiles(files){
   if(!files.length) return;
-  // Baca file SATU-SATU secara berurutan (bukan paralel) supaya kartu
+  // Baca file SATU-SATU secara berurutan (bukan paralel) supaya KTP
   // muncul di grid sesuai urutan upload asli, lalu antrikan semuanya ke
   // editor crop dalam urutan yang sama (foto pertama dibuka duluan).
   loadFilesSequentially([...files], 0, []);
@@ -303,7 +303,7 @@ function updateCropProgress(){
 }
 
 // ---------- Grid rendering ----------
-// Kartu baru diupload TIDAK langsung tampil di daftar — mereka nunggu
+// KTP baru diupload TIDAK langsung tampil di daftar — mereka nunggu
 // di antrian crop (cropQueue) dan hanya masuk ke grid begitu user
 // menekan "Simpan Crop". Ini mencegah daftar kepenuhan foto mentah yang
 // belum diproses / masih miring sebelum sempat di-crop.
@@ -313,7 +313,7 @@ function renderGrid(){
   grid.innerHTML = '';
   const visibleCards = cards.filter(c=>c.croppedDataURL);
   empty.style.display = visibleCards.length ? 'none' : 'block';
-  el('headerCount').textContent = visibleCards.length + ' kartu';
+  el('headerCount').textContent = visibleCards.length + ' KTP';
   el('listSub').textContent = visibleCards.length ? `${visibleCards.length} KTP dimuat` : 'belum ada data';
   el('layoutInfo').textContent = layoutDescription();
   const specW = el('specPaperName'); if(specW) specW.textContent = paper().label.split(' (')[0];
@@ -325,14 +325,14 @@ function renderGrid(){
 
   visibleCards.forEach(c=>{
     const div = document.createElement('div');
-    div.className = 'kcard';
+    div.className = 'ktp-card';
     const statusLabel = c.status === 'enhanced' ? 'HD' : (c.status === 'cropped' ? 'Cropped' : 'Belum Dicrop');
     const statusClass = c.status === 'enhanced' ? 'enhanced' : (c.status === 'cropped' ? 'cropped' : 'raw');
     const thumbClass = c.croppedDataURL ? 'thumb-ready' : 'thumb-raw';
     const thumbSrc = c.croppedDataURL || c.rawImg.src;
-    // Kartu sudah di-crop selalu tersimpan landscape (utk layout cetak),
+    // KTP sudah di-crop selalu tersimpan landscape (utk layout cetak),
     // jadi khusus di preview UI dibungkus wrapper .rot90 supaya tampil
-    // tegak seperti KTP fisik. Kartu raw (belum crop) tampil apa adanya.
+    // tegak seperti KTP fisik. KTP raw (belum crop) tampil apa adanya.
     const thumbInner = c.croppedDataURL
       ? `<div class="rot90"><img src="${thumbSrc}" alt="KTP"></div>`
       : `<img src="${thumbSrc}" alt="KTP">`;
@@ -399,7 +399,7 @@ function escapeHtml(s){
   return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-// Putar hasil crop (kartu yang sudah tersimpan di daftar) 90° searah
+// Putar hasil crop (KTP yang sudah tersimpan di daftar) 90° searah
 // jarum jam, langsung di tempat — tanpa perlu buka ulang editor crop.
 // Berguna kalau hasil crop kebalik/miring 90° setelah disimpan.
 function rotateCardResult(id){
@@ -421,7 +421,7 @@ function rotateCardResult(id){
   img.src = card.croppedDataURL;
 }
 
-// ---------- Zoom preview modal (tap kartu utk lihat hasil crop besar) ----------
+// ---------- Zoom preview modal (tap KTP utk lihat hasil crop besar) ----------
 function openZoomModal(id){
   const card = cards.find(c=>c.id===id);
   if(!card) return;
@@ -450,11 +450,11 @@ function closeZoomModal(){
   el('zoomModal').style.display = 'none';
 }
 
-// Kartu dicetak apa adanya sesuai hasil crop (orientasi diatur manual
+// KTP dicetak apa adanya sesuai hasil crop (orientasi diatur manual
 // oleh user lewat tombol putar kiri/kanan di editor crop).
 function layoutDescription(){
   const layout = computeLayout();
-  return `${layout.cols} kolom × ${layout.rows} baris (${layout.perPage} kartu/lembar)`;
+  return `${layout.cols} kolom × ${layout.rows} baris (${layout.perPage} KTP/lembar)`;
 }
 
 // =========================================================
@@ -464,12 +464,12 @@ function layoutDescription(){
 //   2. Non-max suppression tipis + threshold adaptif (Otsu-like)
 //   3. Hough-transform sederhana utk garis dominan (rho/theta)
 //   4. Kelompokkan garis jadi 2 klaster nyaris-horizontal &
-//      2 klaster nyaris-vertikal -> 4 sisi kartu
+//      2 klaster nyaris-vertikal -> 4 sisi KTP
 //   5. Hitung 4 titik potong (intersection) sbg quad -> lebih presisi
 //      dan tahan terhadap background yang berisik dibanding bounding-box
 //      berbasis proyeksi baris/kolom (metode versi lama).
 //   6. Fallback ke proyeksi bounding-box kalau Hough gagal menemukan
-//      4 sisi yang jelas (mis. kartu nyaris memenuhi seluruh frame).
+//      4 sisi yang jelas (mis. KTP nyaris memenuhi seluruh frame).
 // =========================================================
 
 function openCropModal(id){
@@ -791,8 +791,8 @@ function bboxFallback(mag, w, h){
   }
 
   // Kalau nyaris nggak ada sinyal tepi di sumbu ini (mis. bagian
-  // atas/bawah foto sudah full kartu, nggak ada background yang
-  // kelihatan), itu artinya kartu MEMENUHI frame di sumbu tsb — jadi
+  // atas/bawah foto sudah full KTP, nggak ada background yang
+  // kelihatan), itu artinya KTP MEMENUHI frame di sumbu tsb — jadi
   // batasnya harus full 0..len, BUKAN dipotong paksa ke 6%/94% (itu
   // yang bikin hasil crop kepotong dikit padahal fotonya udah pas/full).
   function findBounds(arr, len){
@@ -816,8 +816,8 @@ function bboxFallback(mag, w, h){
     y0 = 0; y1 = h;
   }
 
-  // Padding tipis ke dalam supaya nggak makan tepi fisik kartu — tapi
-  // kalau bound sudah full frame (0..len, artinya kartu memenuhi sisi
+  // Padding tipis ke dalam supaya nggak makan tepi fisik KTP — tapi
+  // kalau bound sudah full frame (0..len, artinya KTP memenuhi sisi
   // itu), jangan dipangkas lagi, biar hasil crop-nya full sesuai foto.
   const padX = (x0===0 && x1===w) ? 0 : (x1-x0)*0.012;
   const padY = (y0===0 && y1===h) ? 0 : (y1-y0)*0.012;
@@ -892,9 +892,9 @@ function drawCropOverlay(){
   // draw quad
   const q = cropQuad;
   ctx.save();
-  ctx.strokeStyle = '#3fb27f';
+  ctx.strokeStyle = '#6366f1';
   ctx.lineWidth = 2.5;
-  ctx.fillStyle = 'rgba(63,178,127,0.12)';
+  ctx.fillStyle = 'rgba(99,102,241,0.14)';
   ctx.beginPath();
   ctx.moveTo(q.tl.x,q.tl.y);
   ctx.lineTo(q.tr.x,q.tr.y);
@@ -904,7 +904,7 @@ function drawCropOverlay(){
   ctx.fill(); ctx.stroke();
 
   // corner handles
-  ctx.fillStyle = '#3fb27f';
+  ctx.fillStyle = '#6366f1';
   [q.tl,q.tr,q.br,q.bl].forEach(pt=>{
     ctx.beginPath();
     ctx.arc(pt.x, pt.y, 9, 0, Math.PI*2);
@@ -1098,7 +1098,7 @@ function saveCrop(){
   card.enhanced = false;
   closeCropModal();
   renderGrid();
-  toast('Crop tersimpan — tepi kartu diluruskan otomatis ✓');
+  toast('Crop tersimpan — tepi KTP diluruskan otomatis ✓');
 }
 
 // =========================================================
@@ -1217,16 +1217,16 @@ function boxBlurPass(data, w, h){
 }
 
 // =========================================================
-// PRINT LAYOUT — kartu KTP (13.5 x 9cm, landscape) dirotasi 90°
+// PRINT LAYOUT — KTP (13.5 x 9cm, landscape) dirotasi 90°
 // KHUSUS saat digambar ke lembar cetak (bukan diubah di data hasil
 // crop) supaya jejak di kertas jadi 9cm lebar x 13.5cm tinggi
-// (+ ruang no HP). Ini memungkinkan 2 kolom x 2 baris = 4 kartu per
+// (+ ruang no HP). Ini memungkinkan 2 kolom x 2 baris = 4 KTP per
 // lembar F4 — sama seperti layout referensi Word (gambar diputar
 // 270°, disusun 2x2). Rotasi manual yang user atur di editor crop
 // (putar kiri/kanan) TIDAK memengaruhi ini — itu cuma untuk
 // meluruskan orientasi foto sebelum crop; hasil crop akhir selalu
 // disimpan landscape (rasio 13.5:9), dan rotasi 90° cetak ini
-// diterapkan terpisah, konsisten untuk semua kartu.
+// diterapkan terpisah, konsisten untuk semua KTP.
 // Sizing presisi dalam mm, dirender ke canvas print-DPI, diekspor
 // ke PDF via jsPDF (unit mm, ukuran fisik akurat di kertas manapun).
 // =========================================================
@@ -1239,20 +1239,20 @@ function closePreviewModal(){ el('previewModal').style.display='none'; }
 el('btnPreview').addEventListener('click', openPreview);
 el('btnPreviewMobile').addEventListener('click', openPreview);
 
-// Blok kartu di kertas: kartu hasil crop selalu tersimpan LANDSCAPE dengan
+// Blok KTP di kertas: KTP hasil crop selalu tersimpan LANDSCAPE dengan
 // rasio CARD_W_CM : CARD_H_CM, lalu diputar 90° khusus saat dicetak supaya
 // berdiri tegak. Strip "No. HP" ditempel di SAMPING KANAN foto (bukan di
 // bawah), jadi:
-//   lebar blok  = sisi pendek kartu (jadi lebar kolom setelah rotasi) + lebar strip HP
-//   tinggi blok = sisi panjang kartu (jadi tinggi baris setelah rotasi)
+//   lebar blok  = sisi pendek KTP (jadi lebar kolom setelah rotasi) + lebar strip HP
+//   tinggi blok = sisi panjang KTP (jadi tinggi baris setelah rotasi)
 //
 // Dua mode:
 //  - AUTO: hitung kolom/baris maksimal yang muat di kertas untuk ukuran
-//    kartu yang di-set user (perilaku lama, dipertahankan sebagai default).
+//    KTP yang di-set user (perilaku lama, dipertahankan sebagai default).
 //  - MANUAL: user pilih sendiri jumlah kolom x baris dari dropdown; ukuran
-//    kartu ditarik otomatis agar PAS memenuhi kertas sampai batas margin
+//    KTP ditarik otomatis agar PAS memenuhi kertas sampai batas margin
 //    (bukan lagi diambil dari CARD_W_CM/CARD_H_CM input, supaya benar2
-//    "1 kertas full sampai margin" sesuai jumlah kartu yang diminta).
+//    "1 kertas full sampai margin" sesuai jumlah KTP yang diminta).
 function computeLayout(){
   const p = paper();
   const usableW = p.w - 2*MARGIN_MM;
@@ -1261,7 +1261,7 @@ function computeLayout(){
   if(layoutMode === 'MANUAL'){
     const cols = Math.max(1, manualCols);
     const rows = Math.max(1, manualRows);
-    // Ruang yang tersedia utk tiap blok kartu (termasuk gap antar kartu)
+    // Ruang yang tersedia utk tiap blok KTP (termasuk gap antar KTP)
     const blockWmm = (usableW - (cols-1)*GAP_MM) / cols;
     const blockHmm = (usableH - (rows-1)*GAP_MM) / rows;
     // Strip HP ambil porsi tetap dari TINGGI blok (proporsional, supaya
@@ -1270,7 +1270,7 @@ function computeLayout(){
     return { blockWmm, blockHmm, phoneHmm, cols, rows, perPage: cols*rows, paperW: p.w, paperH: p.h, mode:'MANUAL' };
   }
 
-  // AUTO mode: ukuran kartu dari input user, kolom/baris dihitung
+  // AUTO mode: ukuran KTP dari input user, kolom/baris dihitung
   // maksimal yang muat. Strip "No. HP" full-width DI BAWAH foto (bukan
   // di samping) — lebih natural & lega utk ditulis pakai pulpen.
   const shortSideCm = Math.min(CARD_W_CM, CARD_H_CM);
@@ -1326,13 +1326,13 @@ function buildPreviewSummary(){
 
   box.innerHTML = [
     chip('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5" fill="currentColor" stroke="none"/><path d="M21 15l-5-5L5 21"/>',
-      `${previewReadyCards.length} kartu · ${totalPages} lembar`),
+      `${previewReadyCards.length} KTP · ${totalPages} lembar`),
     chip('<path d="M6 2h9l5 5v15H6z"/><path d="M15 2v5h5"/>',
       p.label),
     chip('<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>',
       `${layout.cols} kolom × ${layout.rows} baris / lembar`),
     chip(colorIcon, colorLabel),
-    `<span class="chip chip-note">Kartu diputar tegak otomatis, space No. HP di bawah foto</span>`,
+    `<span class="chip chip-note">KTP diputar tegak otomatis, space No. HP di bawah foto</span>`,
   ].join('');
 }
 
@@ -1454,7 +1454,7 @@ function drawPageOfCards(ctx, pageCards, layout, pageWpx, pageHpx, onImagesReady
       ctx.fillText('No. HP:', x + blockWpx*0.05, labelY);
 
       // garis tempat tulis tangan: horizontal, dari tepat setelah label
-      // sampai TEPAT ke batas kanan kartu (x+blockWpx) — full ke tepi.
+      // sampai TEPAT ke batas kanan KTP (x+blockWpx) — full ke tepi.
       const labelWidth = ctx.measureText('No. HP:').width;
       const lineStartX = x + blockWpx*0.05 + labelWidth + (blockWpx*0.035);
       const lineEndX = x + blockWpx*0.96; // hampir tepat ke tepi kanan gambar

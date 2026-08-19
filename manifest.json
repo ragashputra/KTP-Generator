@@ -4,8 +4,8 @@
   "description": "Generator layout cetak KTP otomatis: crop, HD-kan, susun ke F4",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#f6f3ea",
-  "theme_color": "#0f4c3a",
+  "background_color": "#f7f7f8",
+  "theme_color": "#0e1116",
   "orientation": "portrait",
   "icons": [
     { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
