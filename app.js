@@ -649,18 +649,33 @@ function layoutDescription(){
 }
 
 // =========================================================
-// AUTO-DETECT & CROP — versi ditingkatkan
+// AUTO-DETECT & CROP — v2, akurasi & robustness ditingkatkan jauh
 // Pipeline:
-//   1. Grayscale + Sobel gradient magnitude & orientation
-//   2. Non-max suppression tipis + threshold adaptif (Otsu-like)
-//   3. Hough-transform sederhana utk garis dominan (rho/theta)
-//   4. Kelompokkan garis jadi 2 klaster nyaris-horizontal &
-//      2 klaster nyaris-vertikal -> 4 sisi KTP
-//   5. Hitung 4 titik potong (intersection) sbg quad -> lebih presisi
-//      dan tahan terhadap background yang berisik dibanding bounding-box
-//      berbasis proyeksi baris/kolom (metode versi lama).
-//   6. Fallback ke proyeksi bounding-box kalau Hough gagal menemukan
-//      4 sisi yang jelas (mis. KTP nyaris memenuhi seluruh frame).
+//   1. Grayscale + blur adaptif (kernel menyesuaikan resolusi) + Sobel
+//      gradient magnitude & orientasi.
+//   2. Threshold Otsu asli (dihitung dari histogram magnitude, bukan
+//      persentase magic-number dari nilai maksimum) -> jauh lebih tahan
+//      terhadap foto gelap/terang/silau dibanding threshFrac tetap.
+//   3. Hough-transform utk garis dominan (rho/theta, resolusi 0.5°),
+//      dicoba di BEBERAPA level threshold (ketat -> longgar) secara
+//      berurutan sampai ketemu 4 sisi yang valid -- bukan cuma 1x coba.
+//   4. Kelompokkan garis jadi klaster nyaris-horizontal & nyaris-vertikal,
+//      lalu untuk tiap sisi pilih KANDIDAT TERBAIK (bukan cuma ekstrem
+//      atas/bawah) berdasar jumlah vote & keselarasan dgn sisi seberang.
+//   5. Hitung 4 titik potong (intersection) sbg quad kasar.
+//   6. REFINE tiap sudut: cari titik gradient-magnitude terkuat di
+//      jendela kecil di sekitar hasil intersection Hough -> menempel ke
+//      tepi fisik kartu yang sebenarnya, bukan cuma estimasi garis
+//      statistik (mengoreksi kartu yang sedikit melengkung/lensa distorsi).
+//   7. VALIDASI RASIO ASPEK: kartu ID Indonesia mengikuti standar ID-1
+//      (85.6mm x 53.98mm, rasio ~1.586:1). Quad yang dihasilkan dicek
+//      terhadap rasio ini (toleransi ±22% utk perspektif miring) di KEDUA
+//      kemungkinan orientasi (landscape/portrait). Quad yang rasionya
+//      jauh meleset (mis. kena pinggiran meja/dompet) otomatis ditolak.
+//   8. Fallback bertingkat: kalau Hough gagal total di semua level
+//      threshold, atau hasil quad gagal validasi rasio, jatuh ke
+//      proyeksi bounding-box row/col energy (metode lama, lebih kasar
+//      tapi robust utk kasus KTP nyaris memenuhi seluruh frame foto).
 // =========================================================
 
 function openCropModal(id){
@@ -798,6 +813,9 @@ function closeCropModal(){
 }
 
 // ---- Core edge/gradient computation, shared by detectors ----
+// Kernel blur menyesuaikan resolusi kerja: foto lebih besar -> radius blur
+// lebih besar juga, supaya tekstur halus (hologram, motif KTP, serat kertas)
+// teredam proporsional dan tidak membanjiri Hough dgn garis-garis palsu.
 function computeEdges(canvas){
   const w = canvas.width, h = canvas.height;
   const ctx = canvas.getContext('2d');
@@ -808,21 +826,9 @@ function computeEdges(canvas){
     const r=src.data[i*4], g=src.data[i*4+1], b=src.data[i*4+2];
     gray[i] = 0.299*r+0.587*g+0.114*b;
   }
-  // light blur first to suppress texture noise (helps Hough a lot)
-  const blurred = new Float32Array(w*h);
-  for(let y=0;y<h;y++){
-    for(let x=0;x<w;x++){
-      let sum=0, cnt=0;
-      for(let dy=-1;dy<=1;dy++){
-        const ny=y+dy; if(ny<0||ny>=h) continue;
-        for(let dx=-1;dx<=1;dx++){
-          const nx=x+dx; if(nx<0||nx>=w) continue;
-          sum += gray[ny*w+nx]; cnt++;
-        }
-      }
-      blurred[y*w+x] = sum/cnt;
-    }
-  }
+
+  const blurR = Math.max(1, Math.round(Math.min(w,h)/450));
+  const blurred = boxBlur(gray, w, h, blurR);
 
   const mag = new Float32Array(w*h);
   const ang = new Float32Array(w*h);
@@ -841,17 +847,87 @@ function computeEdges(canvas){
       ang[idx] = Math.atan2(sy,sx);
     }
   }
-  return { w, h, mag, ang };
+  return { w, h, mag, ang, gray };
 }
 
-// ---- Simple Hough line transform restricted to strong-edge pixels ----
-function houghLines(mag, w, h, threshFrac){
+// Separable box blur (horizontal pass lalu vertical pass) -- jauh lebih
+// murah dari kernel NxN penuh utk radius besar, sehingga blur adaptif di
+// atas tetap cepat walau radius membesar pada foto beresolusi tinggi.
+function boxBlur(src, w, h, radius){
+  if(radius <= 0) return src.slice();
+  const tmp = new Float32Array(w*h);
+  const out = new Float32Array(w*h);
+  const size = radius*2+1;
+
+  for(let y=0;y<h;y++){
+    let sum=0;
+    for(let x=-radius;x<=radius;x++){
+      sum += src[y*w + Math.min(w-1,Math.max(0,x))];
+    }
+    for(let x=0;x<w;x++){
+      tmp[y*w+x] = sum/size;
+      const addX = Math.min(w-1, x+radius+1);
+      const remX = Math.max(0, x-radius);
+      sum += src[y*w+addX] - src[y*w+remX];
+    }
+  }
+  for(let x=0;x<w;x++){
+    let sum=0;
+    for(let y=-radius;y<=radius;y++){
+      sum += tmp[Math.min(h-1,Math.max(0,y))*w + x];
+    }
+    for(let y=0;y<h;y++){
+      out[y*w+x] = sum/size;
+      const addY = Math.min(h-1, y+radius+1);
+      const remY = Math.max(0, y-radius);
+      sum += tmp[addY*w+x] - tmp[remY*w+x];
+    }
+  }
+  return out;
+}
+
+// ---- Threshold Otsu asli dari histogram magnitude gradient ----
+// Jauh lebih akurat drpd persentase tetap dari nilai maksimum: nilai
+// maksimum gampang jadi outlier (satu piksel silau/pantulan bisa
+// mendominasi), sedangkan Otsu mencari titik pemisah yang benar-benar
+// memaksimalkan pemisahan antara populasi "tepi" vs "bukan tepi".
+function otsuThreshold(mag, w, h){
   let maxMag = 0;
   for(let i=0;i<mag.length;i++) if(mag[i]>maxMag) maxMag=mag[i];
-  const thresh = maxMag*threshFrac;
+  if(maxMag <= 0) return 0;
 
+  const bins = 256;
+  const hist = new Float64Array(bins);
+  const scale = (bins-1)/maxMag;
+  for(let i=0;i<mag.length;i++){
+    hist[Math.round(mag[i]*scale)]++;
+  }
+  const total = w*h;
+  let sumAll = 0;
+  for(let i=0;i<bins;i++) sumAll += i*hist[i];
+
+  let sumB=0, wB=0, maxVar=0, bestT=0;
+  for(let t=0;t<bins;t++){
+    wB += hist[t];
+    if(wB===0) continue;
+    const wF = total-wB;
+    if(wF===0) break;
+    sumB += t*hist[t];
+    const mB = sumB/wB;
+    const mF = (sumAll-sumB)/wF;
+    const varBetween = wB*wF*(mB-mF)*(mB-mF);
+    if(varBetween > maxVar){ maxVar = varBetween; bestT = t; }
+  }
+  return bestT/scale;
+}
+
+// ---- Hough line transform restricted to strong-edge pixels ----
+// Resolusi sudut 0.5° (2x lebih halus dari versi sebelumnya) supaya sisi
+// KTP yang miring tipis tetap kena vote dgn presisi, mengurangi bias
+// sudut yang bikin quad hasil akhir "melenceng" beberapa derajat.
+function houghLines(mag, w, h, thresh){
   const diag = Math.ceil(Math.sqrt(w*w+h*h));
-  const thetaSteps = 180; // 1 degree resolution
+  const thetaSteps = 360; // 0.5 degree resolution
   const rhoOffset = diag;
   const rhoSize = diag*2;
   const acc = new Int32Array(thetaSteps*rhoSize);
@@ -879,14 +955,14 @@ function houghLines(mag, w, h, threshFrac){
 
   // find local maxima (peaks) in accumulator
   const peaks = [];
-  const minVotes = Math.max(20, Math.round(Math.min(w,h)*0.12));
+  const minVotes = Math.max(18, Math.round(Math.min(w,h)*0.10));
   for(let t=0;t<thetaSteps;t++){
     for(let r=0;r<rhoSize;r++){
       const v = acc[t*rhoSize+r];
       if(v < minVotes) continue;
       // local max check in small neighborhood
       let isMax = true;
-      for(let dt=-2; dt<=2 && isMax; dt++){
+      for(let dt=-4; dt<=4 && isMax; dt++){
         for(let dr=-6; dr<=6 && isMax; dr++){
           if(dt===0 && dr===0) continue;
           const nt = t+dt, nr = r+dr;
@@ -900,11 +976,45 @@ function houghLines(mag, w, h, threshFrac){
     }
   }
   peaks.sort((a,b)=>b.votes-a.votes);
-  return peaks.slice(0, 60); // keep top candidates
+  return peaks.slice(0, 80); // keep top candidates
 }
 
-// classify peaks into near-horizontal / near-vertical, pick best 2 of each
-// forming top/bottom and left/right edges of the card
+// Rasio kartu ID-1 (ISO/IEC 7810) yang dipakai KTP Indonesia: 85.6mm x
+// 53.98mm. Dipakai buat memvalidasi quad hasil deteksi -- kalau bentuknya
+// jauh dari rasio ini, kemungkinan besar itu bukan tepi kartu (mis. tepi
+// meja, buku, atau dompet yang ikut kefoto).
+const ID_CARD_RATIO = 85.6/53.98; // ~1.586
+
+function quadSideLengths(q){
+  const top = Math.hypot(q.tr.x-q.tl.x, q.tr.y-q.tl.y);
+  const bottom = Math.hypot(q.br.x-q.bl.x, q.br.y-q.bl.y);
+  const left = Math.hypot(q.bl.x-q.tl.x, q.bl.y-q.tl.y);
+  const right = Math.hypot(q.br.x-q.tr.x, q.br.y-q.tr.y);
+  return { top, bottom, left, right };
+}
+
+// Terima quad kalau rasio sisi-panjang/sisi-pendek mendekati rasio kartu
+// ID (di orientasi manapun), dgn toleransi longgar krn perspektif miring
+// bisa memampatkan salah satu pasangan sisi.
+function isPlausibleCardQuad(q){
+  const { top, bottom, left, right } = quadSideLengths(q);
+  const avgH = (top+bottom)/2, avgV = (left+right)/2;
+  if(avgH < 2 || avgV < 2) return false;
+  const ratio = Math.max(avgH,avgV) / Math.min(avgH,avgV);
+  const tol = 0.30; // ±30% dari rasio ID-1, cukup longgar utk perspektif miring
+  if(Math.abs(ratio - ID_CARD_RATIO) > ID_CARD_RATIO*tol) return false;
+  // Pasangan sisi berlawanan tidak boleh terlalu njomplang panjangnya
+  // (indikasi quad "miring parah"/salah tangkap garis, bukan perspektif wajar)
+  if(Math.max(top,bottom)/Math.min(top,bottom) > 1.6) return false;
+  if(Math.max(left,right)/Math.min(left,right) > 1.6) return false;
+  return true;
+}
+
+// classify peaks into near-horizontal / near-vertical, then for each side
+// try several of the strongest candidate lines (not just the extreme-most
+// one) and keep whichever combination yields the most plausible ID-card
+// quad. This is far more robust against a single stray strong line (e.g.
+// a fold, shadow, or background edge) hijacking the whole detection.
 function pickCardQuadFromLines(peaks, w, h){
   if(!peaks.length) return null;
 
@@ -912,23 +1022,15 @@ function pickCardQuadFromLines(peaks, w, h){
   for(const p of peaks){
     // theta near 90deg (pi/2) => line ~horizontal; theta near 0/pi => vertical
     const degFromHoriz = Math.abs((p.theta*180/Math.PI) - 90);
-    if(degFromHoriz < 30) horiz.push(p);
-    else if(degFromHoriz > 60) vert.push(p);
+    if(degFromHoriz < 32) horiz.push(p);
+    else if(degFromHoriz > 58) vert.push(p);
   }
   if(horiz.length < 2 || vert.length < 2) return null;
 
-  // among horizontal lines, find one closest to top region and one closest to bottom
   const withY = horiz.map(p=>({...p, yAt0: p.rho / (Math.sin(p.theta)||1e-6) }));
   withY.sort((a,b)=>a.yAt0-b.yAt0);
-  const top = withY[0];
-  const bottom = withY[withY.length-1];
-  if(bottom.yAt0 - top.yAt0 < h*0.3) return null; // too close, unreliable
-
   const withX = vert.map(p=>({...p, xAt0: p.rho / (Math.cos(p.theta)||1e-6) }));
   withX.sort((a,b)=>a.xAt0-b.xAt0);
-  const left = withX[0];
-  const right = withX[withX.length-1];
-  if(right.xAt0 - left.xAt0 < w*0.3) return null;
 
   function intersect(l1, l2){
     // l: x*cos(theta)+y*sin(theta) = rho
@@ -941,29 +1043,93 @@ function pickCardQuadFromLines(peaks, w, h){
     return {x,y};
   }
 
-  const tl = intersect(top, left);
-  const tr = intersect(top, right);
-  const br = intersect(bottom, right);
-  const bl = intersect(bottom, left);
-  if(!tl||!tr||!br||!bl) return null;
-
-  // Sanity: points should be close to the image bounds, not way outside.
-  // A wide pad here is what let noisy background lines (wood grain, etc.)
-  // pull the detected quad far past the actual card edge — tighten it so
-  // a bad line simply fails this check and we fall back to bbox instead.
   const pad = Math.max(w,h)*0.06;
-  for(const pt of [tl,tr,br,bl]){
-    if(pt.x < -pad || pt.x > w+pad || pt.y < -pad || pt.y > h+pad) return null;
+  function withinBounds(pt){
+    return pt.x >= -pad && pt.x <= w+pad && pt.y >= -pad && pt.y <= h+pad;
   }
 
-  // Sanity: resulting quad area shouldn't be wildly larger than the
-  // image itself (another symptom of a stray outside line being picked).
-  const area = Math.abs(
-    (tr.x-tl.x)*(bl.y-tl.y) - (bl.x-tl.x)*(tr.y-tl.y)
-  );
-  if(area > w*h*1.15) return null;
+  // Kandidat sisi atas: beberapa garis paling atas (yAt0 terkecil) yg
+  // punya vote lumayan; sisi bawah: beberapa garis paling bawah. Sama utk
+  // kiri/kanan. Membatasi ke ~4 kandidat teratas per sisi supaya jumlah
+  // kombinasi tetap kecil (maks 4x4x4x4=256), murah dihitung tiap kali.
+  const topCandidates = withY.slice(0, Math.min(4, withY.length));
+  const bottomCandidates = withY.slice(-Math.min(4, withY.length)).reverse();
+  const leftCandidates = withX.slice(0, Math.min(4, withX.length));
+  const rightCandidates = withX.slice(-Math.min(4, withX.length)).reverse();
 
-  return { tl, tr, br, bl };
+  let best = null, bestScore = -Infinity;
+
+  for(const top of topCandidates){
+    for(const bottom of bottomCandidates){
+      if(bottom.yAt0 - top.yAt0 < h*0.3) continue;
+      for(const left of leftCandidates){
+        for(const right of rightCandidates){
+          if(right.xAt0 - left.xAt0 < w*0.3) continue;
+
+          const tl = intersect(top, left);
+          const tr = intersect(top, right);
+          const br = intersect(bottom, right);
+          const bl = intersect(bottom, left);
+          if(!tl||!tr||!br||!bl) continue;
+          if(![tl,tr,br,bl].every(withinBounds)) continue;
+
+          const area = Math.abs((tr.x-tl.x)*(bl.y-tl.y) - (bl.x-tl.x)*(tr.y-tl.y));
+          if(area > w*h*1.15 || area < w*h*0.10) continue;
+
+          const quad = { tl, tr, br, bl };
+          if(!isPlausibleCardQuad(quad)) continue;
+
+          // Score: total Hough votes (garis yg lebih kuat/panjang lebih
+          // dipercaya) + bonus utk quad yg rasio aspeknya paling dekat
+          // ke rasio kartu ID sebenarnya.
+          const { top:t2, bottom:b2, left:l2, right:r2 } = quadSideLengths(quad);
+          const avgH = (t2+b2)/2, avgV = (l2+r2)/2;
+          const ratio = Math.max(avgH,avgV)/Math.min(avgH,avgV);
+          const ratioScore = 1 - Math.min(1, Math.abs(ratio-ID_CARD_RATIO)/(ID_CARD_RATIO*0.30));
+          const voteScore = (top.votes+bottom.votes+left.votes+right.votes);
+          const score = voteScore + ratioScore*voteScore*0.5;
+
+          if(score > bestScore){ bestScore = score; best = quad; }
+        }
+      }
+    }
+  }
+
+  return best;
+}
+
+// ---- Refine tiap sudut quad hasil Hough dgn mencari titik gradient
+// magnitude terkuat di jendela kecil di sekitarnya. Garis Hough adalah
+// estimasi statistik dari keseluruhan sisi -- sudut kartu fisik yang
+// sebenarnya (terutama kalau kartu sedikit melengkung / foto dari sudut)
+// bisa meleset beberapa piksel dari titik potong murni. Ini "menempelkan"
+// tiap sudut ke tepi tajam terdekat, hasilnya jauh lebih presisi. ----
+function refineCorner(pt, mag, w, h, radius){
+  let bestX = pt.x, bestY = pt.y, bestMag = -1;
+  const x0 = Math.max(1, Math.round(pt.x-radius));
+  const x1 = Math.min(w-2, Math.round(pt.x+radius));
+  const y0 = Math.max(1, Math.round(pt.y-radius));
+  const y1 = Math.min(h-2, Math.round(pt.y+radius));
+  for(let y=y0;y<=y1;y++){
+    for(let x=x0;x<=x1;x++){
+      const v = mag[y*w+x];
+      if(v > bestMag){ bestMag = v; bestX = x; bestY = y; }
+    }
+  }
+  // Kalau tidak ada sinyal tepi yang berarti di jendela ini, jangan
+  // geser sama sekali -- lebih aman pakai estimasi Hough drpd nyasar ke
+  // noise.
+  if(bestMag <= 0) return pt;
+  return { x: bestX, y: bestY };
+}
+
+function refineQuadCorners(quad, mag, w, h){
+  const radius = Math.max(4, Math.round(Math.min(w,h)*0.012));
+  const refined = {};
+  for(const k of ['tl','tr','br','bl']){
+    refined[k] = refineCorner(quad[k], mag, w, h, radius);
+  }
+  return refined;
 }
 
 // Fallback: robust bounding box via row/col energy projection (previous method)
@@ -1017,48 +1183,97 @@ function bboxFallback(mag, w, h){
   return { tl:{x:x0,y:y0}, tr:{x:x1,y:y0}, br:{x:x1,y:y1}, bl:{x:x0,y:y1} };
 }
 
+// Beberapa level threshold dicoba berurutan dari yang paling ketat (cuma
+// tepi paling tajam/jelas yg divote) ke yang paling longgar. Threshold
+// ketat menghasilkan garis paling bersih saat kontras KTP-vs-background
+// bagus; kalau itu gagal (mis. background senada dgn kartu, foto agak
+// blur), baru dicoba threshold makin longgar yg menangkap lebih banyak
+// tepi lemah -- trade-off presisi vs recall, dicoba bertahap drpd
+// langsung pilih satu angka tetap yg belum tentu pas utk semua foto.
+const HOUGH_THRESH_LEVELS = [0.35, 0.22, 0.14, 0.08];
+
 function autoDetectCrop(){
   const canvas = cropSourceCanvas;
-  const { w, h, mag } = computeEdges(canvas);
+  setCropDetecting(true);
 
-  let quad = null;
-  try{
-    const peaks = houghLines(mag, w, h, 0.22);
-    quad = pickCardQuadFromLines(peaks, w, h);
-  }catch(err){
-    quad = null;
-  }
+  // requestAnimationFrame supaya browser sempat render status "mendeteksi"
+  // dulu sebelum komputasi berat (Sobel + Otsu + multi-pass Hough) mem-
+  // blok main thread -- pada foto beresolusi tinggi proses ini bisa makan
+  // beberapa ratus ms, tanpa ini UI terasa macet/freeze sesaat.
+  requestAnimationFrame(()=>{
+    let quad = null;
+    try{
+      const { w, h, mag } = computeEdges(canvas);
+      const otsu = otsuThreshold(mag, w, h);
 
-  if(!quad){
-    quad = bboxFallback(mag, w, h);
-  }else{
-    // small inward pad so we don't clip the physical card edge
-    const cx = (quad.tl.x+quad.tr.x+quad.br.x+quad.bl.x)/4;
-    const cy = (quad.tl.y+quad.tr.y+quad.br.y+quad.bl.y)/4;
-    const padFactor = 0.985;
-    for(const k of ['tl','tr','br','bl']){
-      quad[k].x = cx + (quad[k].x-cx)*padFactor;
-      quad[k].y = cy + (quad[k].y-cy)*padFactor;
+      for(const level of HOUGH_THRESH_LEVELS){
+        const peaks = houghLines(mag, w, h, otsu*level);
+        const candidate = pickCardQuadFromLines(peaks, w, h);
+        if(candidate){ quad = candidate; break; }
+      }
+
+      if(quad){
+        // Tempelkan tiap sudut ke tepi tajam terdekat (koreksi presisi),
+        // baru setelah itu beri padding tipis ke dalam.
+        quad = refineQuadCorners(quad, mag, w, h);
+        const cx = (quad.tl.x+quad.tr.x+quad.br.x+quad.bl.x)/4;
+        const cy = (quad.tl.y+quad.tr.y+quad.br.y+quad.bl.y)/4;
+        const padFactor = 0.985;
+        for(const k of ['tl','tr','br','bl']){
+          quad[k].x = cx + (quad[k].x-cx)*padFactor;
+          quad[k].y = cy + (quad[k].y-cy)*padFactor;
+        }
+      }
+
+      if(!quad){
+        quad = bboxFallback(mag, w, h);
+      }
+
+      // clamp to canvas bounds — if the quad still overshoots past the
+      // edge after clamping (a sign the detected line was bad, not just
+      // slightly wide), it's safer to discard it and use the bbox
+      // fallback instead of showing an obviously-wrong oversized box.
+      const overshoots = ['tl','tr','br','bl'].some(k=>
+        quad[k].x < -2 || quad[k].x > w+2 || quad[k].y < -2 || quad[k].y > h+2
+      );
+      if(overshoots){
+        quad = bboxFallback(mag, w, h);
+      }
+      for(const k of ['tl','tr','br','bl']){
+        quad[k].x = Math.max(0, Math.min(w, quad[k].x));
+        quad[k].y = Math.max(0, Math.min(h, quad[k].y));
+      }
+    }catch(err){
+      console.error('autoDetectCrop gagal, fallback ke crop penuh:', err);
+      quad = { tl:{x:0,y:0}, tr:{x:canvas.width,y:0}, br:{x:canvas.width,y:canvas.height}, bl:{x:0,y:canvas.height} };
     }
-  }
 
-  // clamp to canvas bounds — if the quad still overshoots past the edge
-  // after clamping (a sign the detected line was bad, not just slightly
-  // wide), it's safer to discard it and use the bbox fallback instead of
-  // showing an obviously-wrong oversized box to the user.
-  const overshoots = ['tl','tr','br','bl'].some(k=>
-    quad[k].x < -2 || quad[k].x > w+2 || quad[k].y < -2 || quad[k].y > h+2
-  );
-  if(overshoots){
-    quad = bboxFallback(mag, w, h);
-  }
-  for(const k of ['tl','tr','br','bl']){
-    quad[k].x = Math.max(0, Math.min(w, quad[k].x));
-    quad[k].y = Math.max(0, Math.min(h, quad[k].y));
-  }
+    cropQuad = quad;
+    setCropDetecting(false);
+    drawCropOverlay();
+  });
+}
 
-  cropQuad = quad;
-  drawCropOverlay();
+// ---- Indikator "mendeteksi tepi..." di crop stage. Deteksi otomatis
+// bisa makan beberapa ratus ms pada foto resolusi tinggi -- tanpa
+// indikator ini, jeda tsb terasa seperti aplikasi macet, terutama di HP
+// yg kurang kencang. ----
+function setCropDetecting(isDetecting){
+  const stage = el('cropStage');
+  if(!stage) return;
+  let badge = el('cropDetectingBadge');
+  if(isDetecting){
+    if(!badge){
+      badge = document.createElement('div');
+      badge.id = 'cropDetectingBadge';
+      badge.className = 'crop-detecting-badge';
+      badge.innerHTML = '<span class="crop-detecting-dot"></span> Mendeteksi tepi KTP...';
+      stage.appendChild(badge);
+    }
+    badge.style.display = 'flex';
+  } else if(badge){
+    badge.style.display = 'none';
+  }
 }
 
 function drawCropOverlay(){
