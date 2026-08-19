@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cetak-ktp-v29'; // ganti backend Statistik Penggunaan dari CountAPI (pihak ketiga, ternyata gagal/gak reliable) ke Google Apps Script + Google Sheet sendiri (doGet-only, gak kena masalah CORS, datanya kebuka sbg spreadsheet biasa). Lihat gas/Code.gs utk kode backend & panduan deploy-nya. Pesan error di modal statistik juga diperjelas & diprofesionalkan bahasanya.
+const CACHE_NAME = 'cetak-ktp-v30'; // STATS_API_BASE di app.js sudah diisi URL Web App Google Apps Script yang sudah di-deploy (backend statistik penggunaan resmi aktif, gak lagi placeholder).
 const ASSETS = ['./index.html', './app.js', './manifest.json', './icon.svg'];
 
 self.addEventListener('install', e=>{

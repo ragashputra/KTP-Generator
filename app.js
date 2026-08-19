@@ -57,7 +57,7 @@ let printMode = 'COLOR';
 // Selama masih placeholder ini, fitur statistik akan gagal dgn aman
 // (fetchUsageStats mengembalikan null, trackUsage diam-diam gagal) —
 // TIDAK memengaruhi fitur cetak/download utama sama sekali.
-const STATS_API_BASE = 'GANTI_DENGAN_URL_WEB_APP_GOOGLE_APPS_SCRIPT_KAMU';
+const STATS_API_BASE = 'https://script.google.com/macros/s/AKfycbzDzC6m71_UF_y5beDNZJTblvzW5wuxsuDgffkmWwa5E0KBSyJk6BAp_mJxeuvabk3w4w/exec';
 
 // Menambah counter +1 di server (fire-and-forget). Sengaja TIDAK pernah
 // melempar error atau memblokir alur utama (download/print harus tetap
