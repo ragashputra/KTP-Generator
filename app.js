@@ -411,6 +411,11 @@ function renderGrid(){
   empty.style.display = visibleCards.length ? 'none' : 'block';
   el('headerCount').textContent = visibleCards.length + ' KTP';
   el('listSub').textContent = visibleCards.length ? `${visibleCards.length} KTP dimuat` : 'belum ada data';
+  // Tombol "Hapus Semua" cuma relevan kalau ada minimal 1 KTP di daftar
+  // (termasuk yang masih raw/belum di-crop, bukan cuma visibleCards, biar
+  // tombol tidak hilang saat semua foto masih nunggu giliran crop).
+  const clearAllBtn = el('btnClearAll');
+  if(clearAllBtn) clearAllBtn.style.display = cards.length ? 'inline-flex' : 'none';
   el('layoutInfo').textContent = layoutDescription();
   const specW = el('specPaperName'); if(specW) specW.textContent = paper().label.split(' (')[0];
   const specDim = el('specPaperDim'); if(specDim) specDim.textContent = paper().label.match(/\(([^)]+)\)/)?.[1] || '';
@@ -630,6 +635,41 @@ function openStatsModal(){
 function closeStatsModal(){
   el('statsModal').style.display = 'none';
 }
+
+// ---------- Modal konfirmasi "Hapus Semua KTP" ----------
+// Tombol "Hapus Semua" cuma menampilkan modal konfirmasi (tidak langsung
+// menghapus) supaya user tidak kehilangan data secara tidak sengaja krn
+// salah tap/klik. Penghapusan sungguhan baru terjadi di confirmDeleteAll().
+function openDeleteAllModal(){
+  const total = cards.length;
+  if(total === 0) return; // safety-net -- tombol memang sudah disembunyikan saat kosong, tapi dijaga dua kali
+  el('deleteAllCount').textContent = `${total} KTP akan dihapus`;
+  el('deleteAllModal').style.display = 'flex';
+}
+function closeDeleteAllModal(){
+  el('deleteAllModal').style.display = 'none';
+}
+function confirmDeleteAll(){
+  const btn = el('btnConfirmDeleteAll');
+  // Kosongkan seluruh state KTP + antrian crop yang mungkin masih berjalan,
+  // supaya tidak ada sisa foto "menyelinap" balik ke grid lewat cropQueue
+  // setelah modal ditutup.
+  const total = cards.length;
+  cards = [];
+  cropQueue = [];
+  batchTotal = 0;
+  batchDone = 0;
+  activeCropId = null;
+  // Kalau modal crop kebetulan lagi kebuka (edge case: user buka Hapus
+  // Semua dari state lain), tutup juga supaya tidak nyangkut di layar.
+  const cropModalEl = el('cropModal');
+  if(cropModalEl && cropModalEl.style.display !== 'none') cropModalEl.style.display = 'none';
+
+  renderGrid();
+  closeDeleteAllModal();
+  toast(`${total} KTP berhasil dihapus dari daftar`, 3600, 'success');
+}
+el('btnClearAll').addEventListener('click', openDeleteAllModal);
 
 async function loadStatsIntoModal(){
   const refreshBtn = el('btnRefreshStats');
