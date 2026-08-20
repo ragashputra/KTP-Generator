@@ -1,0 +1,10 @@
+name = "cetak-ktp-stats"
+main = "src/worker.js"
+compatibility_date = "2026-08-01"
+
+# Setelah jalankan:
+#   wrangler kv namespace create STATS_KV
+# copy "id" dari hasil output-nya ke sini menggantikan REPLACE_WITH_KV_ID
+[[kv_namespaces]]
+binding = "STATS_KV"
+id = "c0610fada9994677bc889c0eaf7a5780"
