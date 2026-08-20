@@ -425,7 +425,12 @@ function renderGrid(){
     const statusLabel = c.status === 'enhanced' ? 'HD' : (c.status === 'cropped' ? 'Cropped' : 'Belum Dicrop');
     const statusClass = c.status === 'enhanced' ? 'enhanced' : (c.status === 'cropped' ? 'cropped' : 'raw');
     const thumbClass = c.croppedDataURL ? 'thumb-ready' : 'thumb-raw';
-    const thumbSrc = c.croppedDataURL || c.rawImg.src;
+    // Grid selalu pakai thumbnail ringan (thumbDataURL) kalau sudah ada
+    // -- fallback ke croppedDataURL/rawImg.src cuma sbg jaring pengaman
+    // di frame pertama sebelum thumbnail sempat digenerate (harusnya
+    // hampir tidak pernah kepakai krn thumbDataURL selalu dibuat
+    // bebarengan dgn croppedDataURL).
+    const thumbSrc = c.thumbDataURL || c.croppedDataURL || c.rawImg.src;
     // KTP sudah di-crop selalu tersimpan landscape (utk layout cetak),
     // jadi khusus di preview UI dibungkus wrapper .rot90 supaya tampil
     // tegak seperti KTP fisik. KTP raw (belum crop) tampil apa adanya.
@@ -500,6 +505,36 @@ function escapeHtml(s){
   return (s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+// ---- Thumbnail ringan khusus buat grid kartu ----
+// PENTING (fix performa): dulu grid card langsung pakai croppedDataURL
+// (resolusi cetak penuh 1350x900px, JPEG kualitas 0.95) sbg src <img>
+// thumbnail -- padahal di layar cuma dirender kecil (~160px lebar).
+// Browser tetap harus decode gambar resolusi tinggi itu PENUH tiap kali
+// renderGrid() dipanggil ulang, utk SEMUA kartu yg ada di grid, bukan
+// cuma yg berubah. Makin banyak KTP diupload, makin berat setiap render
+// -- inilah kenapa app terasa "makin lambat" dibanding pas awal baru
+// upload 1-2 foto, dan kenapa rotate 1 kartu ikut kerasa berat (rotate
+// -> renderGrid() -> semua thumbnail resolusi tinggi lain ikut didecode
+// ulang jg).
+//
+// Solusinya: simpan thumbnail TERPISAH (thumbDataURL, ~280px lebar,
+// kualitas JPEG lebih rendah) khusus buat ditampilkan di grid.
+// croppedDataURL (resolusi cetak penuh) TETAP dipakai apa adanya utk
+// zoom modal, preview, dan proses cetak/print -- kualitas hasil akhir
+// tidak berkurang sedikit pun, cuma tampilan grid yg dibikin jauh lebih
+// ringan.
+const THUMB_MAX_DIM = 280;
+function makeThumbDataURL(source, srcW, srcH){
+  const scale = Math.min(1, THUMB_MAX_DIM / Math.max(srcW, srcH));
+  const tw = Math.max(1, Math.round(srcW*scale));
+  const th = Math.max(1, Math.round(srcH*scale));
+  const tc = document.createElement('canvas');
+  tc.width = tw; tc.height = th;
+  const tctx = tc.getContext('2d');
+  tctx.drawImage(source, 0, 0, tw, th);
+  return tc.toDataURL('image/jpeg', 0.82);
+}
+
 // Duplikat KTP yang sudah di-crop — berguna kalau user cuma punya 1 KTP
 // tapi mau cetak beberapa salinan sekaligus dalam 1 lembar (misal layout
 // 2x2 muat 4 slot, tapi cuma ada 1 KTP: duplikat 3x biar 1 lembar penuh,
@@ -538,6 +573,7 @@ function rotateCardResult(id){
     ctx.rotate(90*Math.PI/180);
     ctx.drawImage(img, -img.width/2, -img.height/2);
     card.croppedDataURL = canvas.toDataURL('image/jpeg', 0.95);
+    card.thumbDataURL = makeThumbDataURL(canvas, canvas.width, canvas.height);
     renderGrid();
     toast('Foto diputar 90°');
   };
@@ -1656,6 +1692,7 @@ function saveCrop(){
   }
 
   card.croppedDataURL = resultCanvas.toDataURL('image/jpeg', 0.95);
+  card.thumbDataURL = makeThumbDataURL(resultCanvas, resultCanvas.width, resultCanvas.height);
   card.status = 'cropped';
   card.enhanced = false;
   closeCropModal();
@@ -1681,8 +1718,9 @@ function runEnhance(id, btnEl){
   setTimeout(()=>{ // allow UI to paint spinner before heavy sync work
     const img = new Image();
     img.onload = ()=>{
-      const enhancedURL = enhanceImage(img);
-      card.croppedDataURL = enhancedURL;
+      const enhanced = enhanceImage(img);
+      card.croppedDataURL = enhanced.dataURL;
+      card.thumbDataURL = makeThumbDataURL(enhanced.canvas, enhanced.canvas.width, enhanced.canvas.height);
       card.status = 'enhanced';
       card.enhanced = true;
       btnEl.disabled = false;
@@ -1745,7 +1783,7 @@ function enhanceImage(img){
   }
 
   ctx.putImageData(imgData, 0, 0);
-  return stageCanvas.toDataURL('image/jpeg', 0.95);
+  return { dataURL: stageCanvas.toDataURL('image/jpeg', 0.95), canvas: stageCanvas };
 }
 
 function clamp(v){ return v<0?0:(v>255?255:v); }
