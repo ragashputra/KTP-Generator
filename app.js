@@ -862,6 +862,19 @@ function closeCropModal(){
 // Kernel blur menyesuaikan resolusi kerja: foto lebih besar -> radius blur
 // lebih besar juga, supaya tekstur halus (hologram, motif KTP, serat kertas)
 // teredam proporsional dan tidak membanjiri Hough dgn garis-garis palsu.
+//
+// CATATAN: sempat dicoba menggabung channel warna (blueness) LANGSUNG ke
+// magnitude gradient di sini -- itu DIBATALKAN krn mengubah skala &
+// karakteristik data magnitude scr keseluruhan (bisa naik sampai ~1.9x
+// di area yg blueness-nya kuat), yg bikin otsuThreshold & parameter
+// Hough yg sudah di-tuning jadi tidak proporsional lagi thd data baru --
+// hasilnya malah REGRESI (kotak hijau gagal total, jatuh ke bbox
+// fallback yg salah pilih full-frame). Sinyal warna KTP (biru muda
+// khas) sekarang HANYA dipakai di cardColorScore sbg tie-breaker
+// scoring kandidat quad (lihat pickCardQuadFromLines) -- itu tidak
+// mengubah data gradient/threshold sama sekali, jadi jauh lebih aman:
+// cuma mempengaruhi kandidat MANA yg menang di antara yg sudah lolos
+// filter, bukan mengubah proses deteksi tepi itu sendiri.
 function computeEdges(canvas){
   const w = canvas.width, h = canvas.height;
   const ctx = canvas.getContext('2d');
@@ -893,7 +906,7 @@ function computeEdges(canvas){
       ang[idx] = Math.atan2(sy,sx);
     }
   }
-  return { w, h, mag, ang, gray };
+  return { w, h, mag, ang, gray, rgbData: src.data };
 }
 
 // Separable box blur (horizontal pass lalu vertical pass) -- jauh lebih
@@ -937,6 +950,8 @@ function boxBlur(src, w, h, radius){
 // maksimum gampang jadi outlier (satu piksel silau/pantulan bisa
 // mendominasi), sedangkan Otsu mencari titik pemisah yang benar-benar
 // memaksimalkan pemisahan antara populasi "tepi" vs "bukan tepi".
+// Cari max & build histogram digabung jadi SATU pass (dulu 2 pass
+// terpisah) -- optimasi kecil tapi gratis, gak ada trade-off apapun.
 function otsuThreshold(mag, w, h){
   let maxMag = 0;
   for(let i=0;i<mag.length;i++) if(mag[i]>maxMag) maxMag=mag[i];
@@ -946,7 +961,7 @@ function otsuThreshold(mag, w, h){
   const hist = new Float64Array(bins);
   const scale = (bins-1)/maxMag;
   for(let i=0;i<mag.length;i++){
-    hist[Math.round(mag[i]*scale)]++;
+    hist[(mag[i]*scale)|0]++; // |0 lebih cepat dari Math.round utk truncate ke integer
   }
   const total = w*h;
   let sumAll = 0;
@@ -968,12 +983,26 @@ function otsuThreshold(mag, w, h){
 }
 
 // ---- Hough line transform restricted to strong-edge pixels ----
-// Resolusi sudut 0.5° (2x lebih halus dari versi sebelumnya) supaya sisi
-// KTP yang miring tipis tetap kena vote dgn presisi, mengurangi bias
-// sudut yang bikin quad hasil akhir "melenceng" beberapa derajat.
+// Dua optimasi penting drpd versi sebelumnya (efek nyata di kecepatan,
+// TANPA mengurangi akurasi hasil akhir):
+//   1. Titik tepi yg divote DIBATASI ke MAX_EDGE_POINTS terkuat (diambil
+//      berdasar magnitude gradient tertinggi), bukan SEMUA titik di atas
+//      threshold. Di foto dgn banyak tekstur/noise (background ramai,
+//      hologram KTP), jumlah edge point bisa jauh lebih banyak dari yg
+//      benar2 dibutuhkan utk menemukan 4 garis lurus dominan -- vote dari
+//      titik ke-3001 dst itu kontribusinya marjinal krn garis kartu yg
+//      asli sudah pasti kena vote dari titik terkuat duluan. Ini mengubah
+//      kompleksitas voting dari "sebanyak apapun edge point yg lolos
+//      threshold" (bisa meledak di foto berisik) jadi punya batas atas
+//      pasti, tanpa mengorbankan garis yg penting.
+//   2. Radius local-maxima suppression diperkecil (5x7, dari 9x13) --
+//      cukup utk resolusi kerja 480px yg sudah kecil, mengurangi kerja
+//      peak-finding di step berikutnya.
+const MAX_EDGE_POINTS = 2000;
+
 function houghLines(mag, w, h, thresh){
   const diag = Math.ceil(Math.sqrt(w*w+h*h));
-  const thetaSteps = 180; // 1 degree resolution -- cukup krn refineQuadCorners menempelkan sudut ke tepi tajam setelahnya, jadi presisi sub-derajat di tahap Hough tidak terlalu menentukan hasil akhir; 180 steps = separuh beban komputasi dari 360 steps.
+  const thetaSteps = 180; // 1 degree resolution -- cukup krn refineQuadCorners menempelkan sudut ke tepi tajam setelahnya, jadi presisi sub-derajat di tahap Hough tidak terlalu menentukan hasil akhir.
   const rhoOffset = diag;
   const rhoSize = diag*2;
   const acc = new Int32Array(thetaSteps*rhoSize);
@@ -986,30 +1015,58 @@ function houghLines(mag, w, h, thresh){
     sinT[t] = Math.sin(rad);
   }
 
-  // subsample edge pixels for speed on larger images
+  // Kumpulkan kandidat edge point (di atas threshold) dgn subsample
+  // spasial ringan dulu (step=2 kalau gambar kerja masih >500k piksel --
+  // jarang kena krn DETECT_WORK_DIM=480 -> maks ~230k piksel, jadi
+  // step=1 di kondisi normal), LALU cap ke MAX_EDGE_POINTS titik
+  // terkuat via partial selection (bukan full sort -- lebih murah).
   const step = (w*h > 500000) ? 2 : 1;
+  const candX = [], candY = [], candMag = [];
   for(let y=0;y<h;y+=step){
     for(let x=0;x<w;x+=step){
-      if(mag[y*w+x] <= thresh) continue;
-      for(let t=0;t<thetaSteps;t++){
-        const rho = Math.round(x*cosT[t] + y*sinT[t]) + rhoOffset;
-        if(rho<0||rho>=rhoSize) continue;
-        acc[t*rhoSize+rho]++;
-      }
+      const m = mag[y*w+x];
+      if(m <= thresh) continue;
+      candX.push(x); candY.push(y); candMag.push(m);
     }
   }
 
-  // find local maxima (peaks) in accumulator
+  let idxList;
+  if(candX.length > MAX_EDGE_POINTS){
+    // Ambil MAX_EDGE_POINTS indeks dgn magnitude tertinggi lewat full
+    // sort (bukan partial-selection sesungguhnya, tp built-in sort
+    // engine V8 utk array primitif sudah sangat cepat) -- utk jumlah
+    // kandidat yg realistis (puluhan ribu maks stlh subsample), O(n log
+    // n) di sini masih jauh lebih murah drpd nge-vote SEMUA titik itu ke
+    // akumulator 180 sudut (yg costnya O(n*180)).
+    idxList = Array.from(candX, (_,i)=>i);
+    idxList.sort((a,b)=>candMag[b]-candMag[a]);
+    idxList.length = MAX_EDGE_POINTS;
+  }
+
+  const n = idxList ? MAX_EDGE_POINTS : candX.length;
+  for(let i=0;i<n;i++){
+    const j = idxList ? idxList[i] : i;
+    const x = candX[j], y = candY[j];
+    for(let t=0;t<thetaSteps;t++){
+      const rho = Math.round(x*cosT[t] + y*sinT[t]) + rhoOffset;
+      if(rho<0||rho>=rhoSize) continue;
+      acc[t*rhoSize+rho]++;
+    }
+  }
+
+  // find local maxima (peaks) in accumulator -- radius diperkecil (5x7)
+  // krn resolusi kerja sudah kecil, peak yg berdekatan jaraknya jg
+  // proporsional kecil; tidak mengurangi akurasi, cuma memangkas kerja
+  // pencarian yg berlebihan di radius lama (9x13).
   const peaks = [];
   const minVotes = Math.max(18, Math.round(Math.min(w,h)*0.10));
   for(let t=0;t<thetaSteps;t++){
     for(let r=0;r<rhoSize;r++){
       const v = acc[t*rhoSize+r];
       if(v < minVotes) continue;
-      // local max check in small neighborhood
       let isMax = true;
-      for(let dt=-4; dt<=4 && isMax; dt++){
-        for(let dr=-6; dr<=6 && isMax; dr++){
+      for(let dt=-2; dt<=2 && isMax; dt++){
+        for(let dr=-3; dr<=3 && isMax; dr++){
           if(dt===0 && dr===0) continue;
           const nt = t+dt, nr = r+dr;
           if(nt<0||nt>=thetaSteps||nr<0||nr>=rhoSize) continue;
@@ -1025,6 +1082,65 @@ function houghLines(mag, w, h, thresh){
   return peaks.slice(0, 80); // keep top candidates
 }
 
+// ---- v41 FIX: verifikasi "line support" tiap garis Hough ----
+// MASALAH yg dipecahkan: sebuah garis bisa dapat vote lumayan tinggi di
+// akumulator Hough padahal cuma didukung oleh SEBAGIAN KECIL titik di
+// sepanjang lintasannya (mis. satu blok teks NIK/nama, tepi hologram,
+// atau lipatan kertas) -- bukan tepi fisik kartu yg utuh dari ujung ke
+// ujung. Vote-based ranking saja tidak bisa membedakan "garis pendek yg
+// padat" dari "garis panjang yg didukung tepi asli sepanjang sisi
+// kartu", krn akumulator Hough cuma menjumlah, tidak peduli sebaran
+// spasialnya. Inilah salah satu penyebab kotak hijau "nyasar" ke garis
+// internal kartu (spt kasus KTP yg kedeteksi jadi kotak kecil/miring,
+// bukan seluruh badan kartu).
+//
+// FIX: jalan sepanjang lintasan tiap garis kandidat (step 2px sepanjang
+// sumbu yg lebih stabil numeriknya utk orientasi garis tsb) dan hitung
+// berapa persen titik yg BENAR2 punya sinyal tepi (magnitude > thresh)
+// di sekitarnya (window ±2px tegak lurus). Hasilnya "support ratio"
+// 0..1 -- garis tepi kartu asli akan py support tinggi (didukung
+// hampir sepanjang lintasan di dalam frame), sedangkan garis dari
+// tekstur internal akan py support rendah (cuma padat di satu segmen
+// pendek, kosong di sisanya). Dipakai sbg FILTER tambahan sebelum garis
+// masuk jadi kandidat sisi kartu di pickCardQuadFromLines -- murah
+// (maks 80 peaks x ~240 sample = ~19rb operasi, sekali per deteksi).
+function computeLineSupport(peak, mag, w, h, thresh){
+  const cosT = Math.cos(peak.theta), sinT = Math.sin(peak.theta);
+  let hit = 0, total = 0;
+  // Sample di sepanjang sumbu yg py resolusi lebih stabil utk orientasi
+  // garis ini (hindari pembagian dgn sin/cos yg mendekati nol).
+  if(Math.abs(sinT) >= Math.abs(cosT)){
+    for(let x=0; x<w; x+=2){
+      const y = (peak.rho - x*cosT)/sinT;
+      if(y<0 || y>=h) continue;
+      total++;
+      const yi = Math.round(y);
+      let found = false;
+      for(let dy=-2; dy<=2 && !found; dy++){
+        const yy = yi+dy;
+        if(yy<0||yy>=h) continue;
+        if(mag[yy*w+x] > thresh) found = true;
+      }
+      if(found) hit++;
+    }
+  } else {
+    for(let y=0; y<h; y+=2){
+      const x = (peak.rho - y*sinT)/cosT;
+      if(x<0 || x>=w) continue;
+      total++;
+      const xi = Math.round(x);
+      let found = false;
+      for(let dx=-2; dx<=2 && !found; dx++){
+        const xx = xi+dx;
+        if(xx<0||xx>=w) continue;
+        if(mag[y*w+xx] > thresh) found = true;
+      }
+      if(found) hit++;
+    }
+  }
+  return total>0 ? hit/total : 0;
+}
+
 // Rasio kartu ID-1 (ISO/IEC 7810) yang dipakai KTP Indonesia: 85.6mm x
 // 53.98mm. Dipakai buat memvalidasi quad hasil deteksi -- kalau bentuknya
 // jauh dari rasio ini, kemungkinan besar itu bukan tepi kartu (mis. tepi
@@ -1037,6 +1153,18 @@ function quadSideLengths(q){
   const left = Math.hypot(q.bl.x-q.tl.x, q.bl.y-q.tl.y);
   const right = Math.hypot(q.br.x-q.tr.x, q.br.y-q.tr.y);
   return { top, bottom, left, right };
+}
+
+// Shoelace formula utk luas quad sembarang (bukan cuma jajaran genjang) --
+// dipakai buat cross-check luas hasil deteksi Hough thd bboxFallback.
+function quadArea(q){
+  const pts = [q.tl, q.tr, q.br, q.bl];
+  let sum = 0;
+  for(let i=0;i<4;i++){
+    const a = pts[i], b = pts[(i+1)%4];
+    sum += a.x*b.y - b.x*a.y;
+  }
+  return Math.abs(sum)/2;
 }
 
 // Terima quad kalau rasio sisi-panjang/sisi-pendek mendekati rasio kartu
@@ -1056,26 +1184,176 @@ function isPlausibleCardQuad(q){
   return true;
 }
 
+// ---- Skor kecocokan warna KTP (biru muda-putih khas) ----
+// KTP Indonesia py warna dasar yg konsisten & khas: dominan biru muda
+// dgn area putih (foto, teks). Fungsi ini sample sejumlah titik di
+// dalam quad (grid 6x6=36 titik, MURAH -- bukan scan tiap piksel) dan
+// hitung berapa persen yg "masuk akal sbg warna KTP" (biru ATAU putih/
+// abu terang netral, BUKAN warna kulit/kayu/kertas cokelat-oranye).
+// Dipakai sbg TIE-BREAKER tambahan di scoring kandidat quad -- quad yg
+// isinya emang didominasi warna kartu dpt skor lebih tinggi drpd quad
+// yg "ketarik" ke area kulit/background di sekitarnya, walau kandidat
+// itu py total vote Hough yg mirip.
+//
+// PENTING (performa): rgbData adalah Uint8ClampedArray HASIL SATU KALI
+// ctx.getImageData() utk SELURUH canvas kerja, diambil SEKALI di
+// autoDetectCrop lalu di-pass ke sini -- BUKAN dipanggil ulang per
+// piksel per kandidat quad. Manggil ctx.getImageData(x,y,1,1) di dalam
+// loop (bisa ribuan kali utk ratusan kandidat quad) py overhead API
+// yg jauh lebih mahal drpd index array biasa.
+// Klasifikasi satu piksel: "masuk akal sbg warna KTP" (biru muda dominan
+// ATAU netral terang) vs bukan. Dipakai bareng oleh cardColorScore
+// (rata-rata seluruh isi quad) dan nearEdgeColorScore (strip sempit di
+// tepi dalam tiap sisi, lihat komentar di bawah).
+function isCardLikePixel(rgbData, canvasW, canvasH, px, py){
+  if(px<0||px>=canvasW||py<0||py>=canvasH) return null;
+  const idx = (py*canvasW + px)*4;
+  const r=rgbData[idx], g=rgbData[idx+1], b=rgbData[idx+2];
+  const isBluish = (b - r) > 8;
+  const isNeutralLight = (Math.max(r,g,b)-Math.min(r,g,b) < 25) && (r+g+b)/3 > 110;
+  return isBluish || isNeutralLight;
+}
+
+function bilinearQuadPoint(q, u, v){
+  const topX = q.tl.x + (q.tr.x-q.tl.x)*u, topY = q.tl.y + (q.tr.y-q.tl.y)*u;
+  const botX = q.bl.x + (q.br.x-q.bl.x)*u, botY = q.bl.y + (q.br.y-q.bl.y)*u;
+  return { x: Math.round(topX + (botX-topX)*v), y: Math.round(topY + (botY-topY)*v) };
+}
+
+function cardColorScore(rgbData, canvasW, canvasH, q){
+  const GRID = 6;
+  let hit = 0, total = 0;
+  for(let iy=0; iy<GRID; iy++){
+    for(let ix=0; ix<GRID; ix++){
+      // interpolasi bilinear posisi (ix,iy) dlm grid ke koordinat quad
+      const u = (ix+0.5)/GRID, v = (iy+0.5)/GRID;
+      const pt = bilinearQuadPoint(q, u, v);
+      const ok = isCardLikePixel(rgbData, canvasW, canvasH, pt.x, pt.y);
+      if(ok===null) continue;
+      total++;
+      if(ok) hit++;
+    }
+  }
+  return total > 0 ? hit/total : 0;
+}
+
+// ---- v42 FIX: verifikasi warna "tepi dalam" per sisi (bukan cuma rata2 seluruh isi quad) ----
+// MASALAH yg dipecahkan: cardColorScore lama itu RATA-RATA seluruh isi
+// quad. Ini gagal mendeteksi kasus "sisi atas kotak kelewatan jauh ke
+// atas kartu (nangkep garis serat meja / pantulan sleeve plastik yg
+// kuat & panjang scr kontras, bukan tepi kartu asli)" -- krn walau sisi
+// atasnya salah total, SEBAGIAN BESAR isi quad tetap area kartu asli yg
+// ikut kebawa (KTP-nya sendiri masih ada di bagian bawah quad), jadi
+// rata2 keseluruhan tetap lolos ambang. Garis background yg panjang &
+// tegas ini jg py "line support" tinggi (memang garis nyata & terus-
+// menerus), jadi lolos jg filter line-support v41 -- makanya perlu
+// sinyal independen lain di lapisan berbeda.
+//
+// FIX: cek warna KHUSUS di jalur sempit TEPAT DI DALAM tiap 1 dari 4
+// sisi quad (bukan keseluruhan isi). Kalau sisi kartu terdeteksi benar,
+// area sedikit di dalam garis itu HARUS langsung terlihat spt KTP
+// (biru/putih) -- kalau sisi itu kelewatan (spt kasus di atas), area
+// tepat di dalamnya masih background/meja/pantulan, BUKAN kartu, dan
+// itu ketahuan di sini walau rata2 keseluruhan quad masih tinggi.
+// Return: skor sisi TERLEMAH (minimum dari 4 sisi) -- satu sisi yg jelas
+// salah sudah cukup utk menjatuhkan skor gabungan, sesuai tujuannya sbg
+// pendeteksi sisi yg "kelewatan".
+function nearEdgeColorScore(rgbData, canvasW, canvasH, q){
+  if(!rgbData) return 1; // tanpa data warna, jangan menghukum (netral)
+  const ALONG = 6, DEPTH = 2;
+  function stripScore(alongIsU, near0){
+    let hit=0, total=0;
+    for(let i=0;i<ALONG;i++){
+      const t = (i+0.5)/ALONG; // posisi sepanjang sisi, 0..1
+      for(let j=0;j<DEPTH;j++){
+        // masuk sedikit ke DALAM quad dari sisi ini (5% dan 13% dari lebar/tinggi quad)
+        const depth = near0 ? (0.05 + j*0.08) : (1 - (0.05 + j*0.08));
+        const u = alongIsU ? t : depth;
+        const v = alongIsU ? depth : t;
+        const pt = bilinearQuadPoint(q, u, v);
+        const ok = isCardLikePixel(rgbData, canvasW, canvasH, pt.x, pt.y);
+        if(ok===null) continue;
+        total++; if(ok) hit++;
+      }
+    }
+    return total>0 ? hit/total : 0;
+  }
+  const topScore    = stripScore(true, true);   // sepanjang u (horizontal), dekat v=0 (atas)
+  const bottomScore = stripScore(true, false);  // dekat v=1 (bawah)
+  const leftScore   = stripScore(false, true);  // sepanjang v (vertikal), dekat u=0 (kiri)
+  const rightScore  = stripScore(false, false); // dekat u=1 (kanan)
+  return Math.min(topScore, bottomScore, leftScore, rightScore);
+}
+
+
+
 // classify peaks into near-horizontal / near-vertical, then for each side
 // try several of the strongest candidate lines (not just the extreme-most
 // one) and keep whichever combination yields the most plausible ID-card
 // quad. This is far more robust against a single stray strong line (e.g.
 // a fold, shadow, or background edge) hijacking the whole detection.
-function pickCardQuadFromLines(peaks, w, h){
+//
+// rgbData (opsional): Uint8ClampedArray dari SATU KALI getImageData
+// canvas kerja, dipakai cardColorScore sbg tie-breaker warna. Kalau
+// tidak di-pass (null), scoring jalan tanpa komponen warna spt
+// sebelumnya -- tetap valid, cuma gak dpt bonus akurasi warna.
+//
+// mag, edgeThresh (opsional): dipakai computeLineSupport utk memfilter
+// garis yg vote-nya lumayan tapi tdk benar2 didukung tepi di sepanjang
+// lintasannya (lihat komentar computeLineSupport di atas). Kalau tidak
+// di-pass, filter ini dilewati (perilaku sama spt sebelum v41).
+function pickCardQuadFromLines(peaks, w, h, rgbData, mag, edgeThresh){
   if(!peaks.length) return null;
 
+  // ---- v41 FIX (bug klasifikasi sudut): sebelumnya ada "zona mati"
+  // antara 32°-58° dari horizontal yg TIDAK masuk horiz maupun vert --
+  // garis apapun yg jatuh di rentang itu dibuang sepenuhnya. Ini fatal
+  // utk KTP yg difoto miring/rotasi (umum terjadi krn dipegang tangan):
+  // begitu sisi kartu terotasi ke rentang itu, sisi ASLI kartu hilang
+  // dari kandidat, dan algoritma terpaksa memilih dari garis internal
+  // (teks, hologram, lipatan) yg kebetulan jatuh di bucket horiz/vert --
+  // persis pola kegagalan "kotak hijau jadi kecil/miring, nggak nutupin
+  // seluruh kartu" yg dilaporkan. FIX: split tegas di 45° tanpa celah,
+  // jadi SETIAP garis pasti masuk salah satu bucket (yg mana pun lebih
+  // dekat sifatnya thd garis itu), berapapun rotasi kartunya di foto.
   const horiz = [], vert = [];
   for(const p of peaks){
     // theta near 90deg (pi/2) => line ~horizontal; theta near 0/pi => vertical
     const degFromHoriz = Math.abs((p.theta*180/Math.PI) - 90);
-    if(degFromHoriz < 32) horiz.push(p);
-    else if(degFromHoriz > 58) vert.push(p);
+    if(degFromHoriz <= 45) horiz.push(p);
+    else vert.push(p);
   }
-  if(horiz.length < 2 || vert.length < 2) return null;
 
-  const withY = horiz.map(p=>({...p, yAt0: p.rho / (Math.sin(p.theta)||1e-6) }));
+  // ---- v41: filter garis lewat line-support (lihat computeLineSupport) ----
+  // Dilakukan SETELAH klasifikasi horiz/vert (bukan sebelum) supaya kalau
+  // filter ini membuang terlalu banyak garis di satu sisi, kita masih
+  // punya cara aman utk mundur (fallback) ke set yg belum difilter,
+  // BUKAN gagal total spt bug lama. Threshold 0.32 dipilih longgar --
+  // tujuannya cuma buang garis yg JELAS cuma didukung tekstur lokal
+  // (support sangat rendah), bukan menyaring ketat semua kandidat.
+  const MIN_LINE_SUPPORT = 0.32;
+  let horizFiltered = horiz, vertFiltered = vert;
+  if(mag && edgeThresh != null){
+    const withSupport = arr => arr.map(p=>{
+      if(p.support === undefined) p.support = computeLineSupport(p, mag, w, h, edgeThresh);
+      return p;
+    }).filter(p=>p.support >= MIN_LINE_SUPPORT);
+    const hf = withSupport(horiz);
+    const vf = withSupport(vert);
+    // Cuma pakai hasil filter kalau MASIH cukup kandidat di kedua sisi --
+    // kalau filter terlalu agresif (mis. semua garis kartu emang lemah
+    // krn kontras rendah), lebih aman mundur ke set asli drpd gagal total.
+    if(hf.length >= 2) horizFiltered = hf;
+    if(vf.length >= 2) vertFiltered = vf;
+  }
+  const horizFinal = horizFiltered.length >= 2 ? horizFiltered : horiz;
+  const vertFinal = vertFiltered.length >= 2 ? vertFiltered : vert;
+
+  if(horizFinal.length < 2 || vertFinal.length < 2) return null;
+
+  const withY = horizFinal.map(p=>({...p, yAt0: p.rho / (Math.sin(p.theta)||1e-6) }));
   withY.sort((a,b)=>a.yAt0-b.yAt0);
-  const withX = vert.map(p=>({...p, xAt0: p.rho / (Math.cos(p.theta)||1e-6) }));
+  const withX = vertFinal.map(p=>({...p, xAt0: p.rho / (Math.cos(p.theta)||1e-6) }));
   withX.sort((a,b)=>a.xAt0-b.xAt0);
 
   function intersect(l1, l2){
@@ -1096,12 +1374,16 @@ function pickCardQuadFromLines(peaks, w, h){
 
   // Kandidat sisi atas: beberapa garis paling atas (yAt0 terkecil) yg
   // punya vote lumayan; sisi bawah: beberapa garis paling bawah. Sama utk
-  // kiri/kanan. Membatasi ke ~4 kandidat teratas per sisi supaya jumlah
-  // kombinasi tetap kecil (maks 4x4x4x4=256), murah dihitung tiap kali.
-  const topCandidates = withY.slice(0, Math.min(4, withY.length));
-  const bottomCandidates = withY.slice(-Math.min(4, withY.length)).reverse();
-  const leftCandidates = withX.slice(0, Math.min(4, withX.length));
-  const rightCandidates = withX.slice(-Math.min(4, withX.length)).reverse();
+  // kiri/kanan. Membatasi ke ~6 kandidat teratas per sisi (v41: dinaikkan
+  // dari 4 -- sekarang aman krn garis lemah/noise sudah disaring duluan
+  // oleh line-support filter di atas, jadi menambah kandidat menaikkan
+  // peluang nemu kombinasi yg benar tanpa menambah risiko salah pilih).
+  // Kombinasi maks 6x6x6x6=1296, masih murah (tiap kombinasi cuma
+  // intersect + beberapa perbandingan angka).
+  const topCandidates = withY.slice(0, Math.min(6, withY.length));
+  const bottomCandidates = withY.slice(-Math.min(6, withY.length)).reverse();
+  const leftCandidates = withX.slice(0, Math.min(6, withX.length));
+  const rightCandidates = withX.slice(-Math.min(6, withX.length)).reverse();
 
   let best = null, bestScore = -Infinity;
 
@@ -1127,13 +1409,33 @@ function pickCardQuadFromLines(peaks, w, h){
 
           // Score: total Hough votes (garis yg lebih kuat/panjang lebih
           // dipercaya) + bonus utk quad yg rasio aspeknya paling dekat
-          // ke rasio kartu ID sebenarnya.
+          // ke rasio kartu ID sebenarnya + bonus warna rata2 isi quad +
+          // bonus warna TEPI DALAM per sisi (v42, lihat nearEdgeColorScore
+          // -- ini penentu utama utk menolak sisi yg "kelewatan" ke garis
+          // background yg kuat/panjang, spt garis serat meja/pantulan
+          // sleeve plastik, krn sinyal itu tdk tertangkap rata2 keseluruhan).
           const { top:t2, bottom:b2, left:l2, right:r2 } = quadSideLengths(quad);
           const avgH = (t2+b2)/2, avgV = (l2+r2)/2;
           const ratio = Math.max(avgH,avgV)/Math.min(avgH,avgV);
           const ratioScore = 1 - Math.min(1, Math.abs(ratio-ID_CARD_RATIO)/(ID_CARD_RATIO*0.30));
           const voteScore = (top.votes+bottom.votes+left.votes+right.votes);
-          const score = voteScore + ratioScore*voteScore*0.5;
+          let score = voteScore + ratioScore*voteScore*0.5;
+          if(rgbData){
+            const colorScore = cardColorScore(rgbData, w, h, quad);
+            const edgeScore = nearEdgeColorScore(rgbData, w, h, quad);
+            score += colorScore*voteScore*0.6;
+            // Bobot edgeScore dibuat LEBIH BESAR drpd colorScore biasa --
+            // ini sinyal paling langsung utk membedakan "sisi pas di tepi
+            // kartu" dari "sisi kelewatan ke background", jadi harus jadi
+            // faktor penentu, bukan sekadar tie-breaker kecil.
+            score += edgeScore*voteScore*1.1;
+            // Kalau tepi dalam salah satu sisi jelas2 bukan warna kartu
+            // sama sekali (mis. sisi itu masih murni meja/pantulan),
+            // diskualifikasi total drpd cuma dikurangi skornya -- kandidat
+            // sekelewatan itu tidak boleh menang lawan kandidat yg lebih
+            // masuk akal walau vote Hough-nya lebih rendah.
+            if(edgeScore < 0.15) continue;
+          }
 
           if(score > bestScore){ bestScore = score; best = quad; }
         }
@@ -1179,7 +1481,9 @@ function refineQuadCorners(quad, mag, w, h){
 }
 
 // Fallback: robust bounding box via row/col energy projection (previous method)
-function bboxFallback(mag, w, h){
+// rgbData (opsional, v42): dipakai utk refine batas hasil proyeksi energi
+// tepi dgn sinyal warna KTP -- lihat komentar di blok refinement di bawah.
+function bboxFallback(mag, w, h, rgbData){
   let maxMag = 0;
   for(let i=0;i<mag.length;i++) if(mag[i]>maxMag) maxMag=mag[i];
   const thresh = maxMag*0.18;
@@ -1214,9 +1518,77 @@ function bboxFallback(mag, w, h){
   let [y0,y1] = findBounds(rowSum, h);
 
   const detW = x1-x0, detH = y1-y0;
+  const isFullFrameX = (x0===0 && x1===w) || detW < w*0.25;
+  const isFullFrameY = (y0===0 && y1===h) || detH < h*0.25;
   if(detW < w*0.25 || detH < h*0.25){
     x0 = 0; x1 = w;
     y0 = 0; y1 = h;
+  }
+
+  // ---- v42 FIX: refine tiap batas dgn sinyal warna KTP ----
+  // MASALAH yg dipecahkan: proyeksi energi tepi (colSum/rowSum di atas)
+  // memotong berdasar "2% pertama energi tepi dari tiap ujung" -- itu
+  // TIDAK PEDULI apakah tepi itu tepi kartu asli atau garis background
+  // yg kuat (serat meja, pantulan sleeve plastik). Kalau garis
+  // background itu ada dekat salah satu ujung foto, bbox ini bisa
+  // "kebawa" sama persis spt masalah yg terjadi di Hough (bboxFallback
+  // ini kan jadi safety-net terakhir kalau Hough dianggap tidak
+  // dipercaya -- percuma kalau safety-net-nya py kelemahan yg sama).
+  //
+  // FIX: geser tiap batas ke DALAM (maks ~35% dari lebar/tinggi
+  // terdeteksi) sampai ketemu baris/kolom yg isinya sudah cukup terlihat
+  // spt warna khas KTP (biru muda/putih). Kalau baris/kolom awal SUDAH
+  // spt itu, tidak digeser sama sekali (tidak ada regresi). Kalau tidak
+  // ketemu sampai batas maksimal geser, biarkan batas asli (lebih aman
+  // drpd menggeser tanpa dasar yg jelas). Dilewati kalau axis itu sudah
+  // "full frame" (kartu memenuhi sisi tsb, tidak ada yg perlu digeser).
+  if(rgbData){
+    const isCardAt = (x,y) => isCardLikePixel(rgbData, w, h, x, y);
+    function rowCardFraction(y, xa, xb){
+      let hit=0, total=0;
+      for(let x=Math.round(xa); x<=Math.round(xb); x+=3){
+        const ok = isCardAt(x, y);
+        if(ok===null) continue;
+        total++; if(ok) hit++;
+      }
+      return total>0 ? hit/total : 0;
+    }
+    function colCardFraction(x, ya, yb){
+      let hit=0, total=0;
+      for(let y=Math.round(ya); y<=Math.round(yb); y+=3){
+        const ok = isCardAt(x, y);
+        if(ok===null) continue;
+        total++; if(ok) hit++;
+      }
+      return total>0 ? hit/total : 0;
+    }
+    const CARD_ROW_FRAC = 0.35;
+    if(!isFullFrameY){
+      const maxShift = Math.round((y1-y0)*0.35);
+      if(rowCardFraction(y0, x0, x1) < CARD_ROW_FRAC){
+        for(let dy=1; dy<=maxShift; dy++){
+          if(rowCardFraction(y0+dy, x0, x1) >= CARD_ROW_FRAC){ y0 = y0+dy; break; }
+        }
+      }
+      if(rowCardFraction(y1, x0, x1) < CARD_ROW_FRAC){
+        for(let dy=1; dy<=maxShift; dy++){
+          if(rowCardFraction(y1-dy, x0, x1) >= CARD_ROW_FRAC){ y1 = y1-dy; break; }
+        }
+      }
+    }
+    if(!isFullFrameX){
+      const maxShift = Math.round((x1-x0)*0.35);
+      if(colCardFraction(x0, y0, y1) < CARD_ROW_FRAC){
+        for(let dx=1; dx<=maxShift; dx++){
+          if(colCardFraction(x0+dx, y0, y1) >= CARD_ROW_FRAC){ x0 = x0+dx; break; }
+        }
+      }
+      if(colCardFraction(x1, y0, y1) < CARD_ROW_FRAC){
+        for(let dx=1; dx<=maxShift; dx++){
+          if(colCardFraction(x1-dx, y0, y1) >= CARD_ROW_FRAC){ x1 = x1-dx; break; }
+        }
+      }
+    }
   }
 
   // Padding tipis ke dalam supaya nggak makan tepi fisik KTP — tapi
@@ -1229,21 +1601,20 @@ function bboxFallback(mag, w, h){
   return { tl:{x:x0,y:y0}, tr:{x:x1,y:y0}, br:{x:x1,y:y1}, bl:{x:x0,y:y1} };
 }
 
-// Beberapa level threshold dicoba berurutan dari yang paling ketat (cuma
-// tepi paling tajam/jelas yg divote) ke yang paling longgar. Threshold
-// ketat menghasilkan garis paling bersih saat kontras KTP-vs-background
-// bagus; kalau itu gagal (mis. background senada dgn kartu, foto agak
-// blur), baru dicoba threshold makin longgar yg menangkap lebih banyak
-// tepi lemah -- trade-off presisi vs recall, dicoba bertahap drpd
-// langsung pilih satu angka tetap yg belum tentu pas utk semua foto.
-// Cuma 2 level (bukan 4) -- lebih dari itu bikin Hough dipanggil ulang
-// berkali-kali dgn biaya besar utk manfaat yg makin kecil; 2 level sudah
-// menutup mayoritas kasus (kontras bagus -> ketat; kontras lemah -> longgar).
-const HOUGH_THRESH_LEVELS = [0.30, 0.12];
+// Threshold Hough SATU level (bukan coba ketat-dulu-baru-longgar spt
+// versi sebelumnya, yg bisa menjalankan Hough voting 2x penuh) -- dgn
+// MAX_EDGE_POINTS di houghLines yg membatasi jumlah titik yg divote ke
+// titik2 magnitude TERKUAT, threshold menengah-longgar (0.15) sudah
+// cukup robust utk kedua kondisi kontras: kalau kontras KTP-vs-
+// background bagus, titik terkuat yg masuk otomatis didominasi tepi
+// kartu asli; kalau kontras lemah, threshold longgar ini tetap
+// menangkap tepi yg agak samar. Ini memangkas beban Hough voting sampai
+// HALF di kasus yg dulu perlu 2 percobaan, tanpa mengurangi akurasi.
+const HOUGH_THRESH_LEVEL = 0.15;
 
 // Deteksi tepi (Sobel+Hough) dijalankan di resolusi kerja terpisah yang
 // JAUH lebih kecil dari canvas tampilan (900px) -- proses O(w*h) Sobel
-// dan O(edge_pixels * 360_sudut) Hough itu kuadratik terhadap resolusi,
+// dan O(edge_pixels * 180_sudut) Hough itu kuadratik terhadap resolusi,
 // jadi turun dari 900px ke 480px saja sudah memangkas beban kerja
 // sekitar 3.5x (900²/480² ≈ 3.5). Hasil quad lalu di-scale balik ke
 // resolusi 900px sebelum dipakai sbg overlay/crop -- akurasi akhir tidak
@@ -1285,19 +1656,56 @@ function autoDetectCrop(){
     let quad = null;
     try{
       const { detCanvas, detScale } = buildDetectionCanvas(canvas);
-      const { w, h, mag } = computeEdges(detCanvas);
+      const { w, h, mag, rgbData } = computeEdges(detCanvas);
       const otsu = otsuThreshold(mag, w, h);
 
-      for(const level of HOUGH_THRESH_LEVELS){
-        const peaks = houghLines(mag, w, h, otsu*level);
-        const candidate = pickCardQuadFromLines(peaks, w, h);
-        if(candidate){ quad = candidate; break; }
+      const edgeThresh = otsu*HOUGH_THRESH_LEVEL;
+      const peaks = houghLines(mag, w, h, edgeThresh);
+      quad = pickCardQuadFromLines(peaks, w, h, rgbData, mag, edgeThresh);
+
+      // ---- v41 FIX: cross-check quad Hough thd bboxFallback ----
+      // MASALAH yg dipecahkan: pickCardQuadFromLines bisa saja menemukan
+      // 4 garis yg SECARA INTERNAL konsisten (lolos rasio ID-card, lolos
+      // area 10%-115%) tapi SALAH SECARA GLOBAL -- mis. quad kecil yg
+      // cuma menutupi sebagian kartu, krn 4 garis itu kebetulan cocok
+      // satu sama lain walau bukan tepi kartu yg sebenarnya. Vote +
+      // rasio + warna dari pickCardQuadFromLines semua "self-referential"
+      // (dihitung dari quad itu sendiri) sehingga tidak bisa menangkap
+      // kesalahan sistemik jenis ini.
+      //
+      // FIX: bboxFallback pakai metode yg SAMA SEKALI independen (proyeksi
+      // energi tepi per baris/kolom, bukan Hough+garis), jadi cocok jadi
+      // pembanding silang yg jujur. Kalau luas quad Hough jauh lebih kecil
+      // / lebih besar drpd estimasi bbox (rentang longgar 0.5x-1.7x, krn
+      // bbox itu sendiri cuma axis-aligned & bisa sedikit meleset di kartu
+      // yg miring), ATAU skor warna isi quad terlalu rendah utk terlihat
+      // spt KTP (dominan biru-putih), quad Hough dianggap tidak
+      // dipercaya dan kita pakai bboxFallback yg lebih aman sbg gantinya.
+      // bbox dihitung SEKALI di sini dan dipakai ulang di bawah (overshoot
+      // check) supaya tidak menghitung proyeksi energi dua kali.
+      const bboxCandidate = bboxFallback(mag, w, h, rgbData);
+      if(quad){
+        const bboxArea = Math.abs(bboxCandidate.tr.x-bboxCandidate.tl.x) * Math.abs(bboxCandidate.bl.y-bboxCandidate.tl.y);
+        const hArea = quadArea(quad);
+        const areaRatio = bboxArea > 0 ? hArea/bboxArea : 1;
+        const colorScore = rgbData ? cardColorScore(rgbData, w, h, quad) : 1;
+        // v42: tambah nearEdgeColorScore sbg kondisi kecurigaan tambahan --
+        // ini menangkap kasus "salah satu sisi kelewatan ke garis
+        // background yg kuat" yg lolos dari areaRatio & colorScore rata2
+        // (krn sebagian besar isi quad tetap kartu asli, cuma satu sisi
+        // yg salah). Threshold di sini (0.2) sedikit lebih longgar drpd
+        // yg dipakai sbg diskualifikasi kandidat di pickCardQuadFromLines
+        // (0.15), krn ini pengecekan terakhir stlh quad "terbaik" terpilih
+        // -- kalau msh serendah ini stlh lolos seleksi, memang patut curiga.
+        const edgeScore = rgbData ? nearEdgeColorScore(rgbData, w, h, quad) : 1;
+        const suspicious = areaRatio < 0.5 || areaRatio > 1.7 || colorScore < 0.4 || edgeScore < 0.2;
+        if(suspicious) quad = null;
       }
 
       if(quad){
         quad = refineQuadCorners(quad, mag, w, h);
       } else {
-        quad = bboxFallback(mag, w, h);
+        quad = bboxCandidate;
       }
 
       // Scale balik ke resolusi canvas tampilan (900px) kalau deteksi
@@ -1321,10 +1729,11 @@ function autoDetectCrop(){
         quad[k].x < -2 || quad[k].x > canvas.width+2 || quad[k].y < -2 || quad[k].y > canvas.height+2
       );
       if(overshoots){
-        // Pakai mag/w/h yg sudah dihitung di atas (JANGAN panggil
-        // computeEdges ulang -- itu proses Sobel yg cukup mahal, gak
-        // perlu dihitung dua kali cuma buat fallback ini).
-        let bb = bboxFallback(mag, w, h);
+        // Pakai bboxCandidate yg sudah dihitung di atas (JANGAN panggil
+        // bboxFallback/computeEdges ulang -- proyeksi energi & Sobel itu
+        // proses yg cukup mahal, gak perlu dihitung dua kali cuma buat
+        // fallback ini).
+        let bb = bboxCandidate;
         if(detScale < 1) bb = scaleQuad(bb, detScale);
         quad = bb;
       }
