@@ -628,12 +628,60 @@ function formatRelativeTime(isoString){
   return then.toLocaleDateString('id-ID', { day:'numeric', month:'long', year:'numeric' });
 }
 
+// ---------- Auto-refresh statistik (polling ringan selagi modal kebuka) ----------
+// Kenapa polling, bukan websocket/SSE: backend-nya cuma Cloudflare Worker
+// simpel dgn endpoint GET biasa (lihat STATS_API_BASE di atas), gak ada
+// infra realtime. Polling tiap beberapa detik itu paling murah & robust
+// utk kasus ini -- cukup utk "kerasa hidup" tanpa perlu bikin infra baru.
+const STATS_POLL_MS = 6000; // 6 detik -- di tengah 5-10 detik yg wajar, gak spam server tapi masih kerasa realtime
+let statsPollTimer = null;
+let statsDisplayed = { printDirect: null, downloadPdf: null }; // angka yg lagi kelihatan di layar, jadi basis animasi count-up berikutnya
+let statsCountUpToken = 0; // dinaikkan tiap kali animasi baru mulai; membatalkan animasi count-up sebelumnya yg mungkin masih jalan (mis. refresh manual dipencet pas polling lagi jalan)
+
+// Animasi angka naik/turun halus dari fromVal ke toVal (bukan langsung
+// loncat) -- ease-out cubic supaya kerasa "settle" di akhir, mirip
+// dashboard/analytics app profesional (Stripe, Vercel, dsb).
+function animateStatNumber(node, fromVal, toVal){
+  if(fromVal === null || fromVal === undefined || isNaN(fromVal) || fromVal === toVal){
+    node.textContent = toVal.toLocaleString('id-ID');
+    return;
+  }
+  const token = ++statsCountUpToken;
+  const duration = 550;
+  const startTime = performance.now();
+  node.classList.remove('is-updating'); void node.offsetWidth; node.classList.add('is-updating'); // retrigger flash CSS animation
+  function step(now){
+    if(token !== statsCountUpToken) return; // ada animasi/refresh lain yg lebih baru, batalkan yg ini
+    const t = Math.min(1, (now - startTime) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    node.textContent = Math.round(fromVal + (toVal - fromVal) * eased).toLocaleString('id-ID');
+    if(t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function startStatsPolling(){
+  stopStatsPolling(); // safety-net -- jangan sampai ada interval numpuk kalau openStatsModal kepanggil dobel
+  statsPollTimer = setInterval(()=>{
+    // Skip kalau tab lagi di background (mis. user pindah tab) -- hemat
+    // request percuma buat data yg toh gak lagi dilihat siapapun.
+    if(document.hidden) return;
+    loadStatsIntoModal({ silent:true });
+  }, STATS_POLL_MS);
+}
+function stopStatsPolling(){
+  if(statsPollTimer){ clearInterval(statsPollTimer); statsPollTimer = null; }
+}
+
 function openStatsModal(){
   el('statsModal').style.display = 'flex';
+  statsDisplayed = { printDirect: null, downloadPdf: null }; // reset basis animasi tiap modal dibuka ulang, biar angka pertama tampil apa adanya (gak animasi dari 0)
   loadStatsIntoModal();
+  startStatsPolling();
 }
 function closeStatsModal(){
   el('statsModal').style.display = 'none';
+  stopStatsPolling(); // stop auto-polling begitu modal ditutup -- gak ada gunanya nge-fetch data yg gak dilihat
 }
 
 // ---------- Modal konfirmasi "Hapus Semua KTP" ----------
@@ -671,49 +719,85 @@ function confirmDeleteAll(){
 }
 el('btnClearAll').addEventListener('click', openDeleteAllModal);
 
-async function loadStatsIntoModal(){
+// opts.silent = true kalau ini panggilan auto-polling di background (bukan
+// dari klik user) -- bedanya: gak nampilin state "Memuat..." yg bikin kedip,
+// gak nyalain spinner tombol Muat Ulang, dan kalau fetch gagal, gak menimpa
+// angka terakhir yg sudah berhasil tampil dgn tanda error (biar gak "kedip"
+// jadi strip (—) padahal cuma koneksi kepleset sesaat). Refresh manual
+// (silent=false, dari buka modal atau klik Muat Ulang) tetap tampilkan
+// semua state termasuk error, spt semula.
+async function loadStatsIntoModal(opts = {}){
+  const silent = !!opts.silent;
   const refreshBtn = el('btnRefreshStats');
   const printEl = el('statPrintDirect');
   const pdfEl = el('statDownloadPdf');
   const lastUsedEl = el('statsLastUsed');
+  const liveDotEl = el('statsLiveDot');
 
-  refreshBtn.classList.add('is-loading');
-  refreshBtn.disabled = true;
-  printEl.textContent = '–';
-  printEl.classList.remove('stats-num-error');
-  pdfEl.textContent = '–';
-  pdfEl.classList.remove('stats-num-error');
-  lastUsedEl.textContent = 'Memuat data statistik...';
+  if(!silent){
+    refreshBtn.classList.add('is-loading');
+    refreshBtn.disabled = true;
+    printEl.textContent = '–';
+    printEl.classList.remove('stats-num-error');
+    pdfEl.textContent = '–';
+    pdfEl.classList.remove('stats-num-error');
+    lastUsedEl.textContent = 'Memuat data statistik...';
+  }
 
   const notConfigured = !STATS_API_BASE || STATS_API_BASE.startsWith('GANTI_');
   const stats = await fetchUsageStats();
 
-  if(stats.printDirect === null){
+  // Kalau modal sudah ditutup selagi fetch ini masih di-await (mis. polling
+  // yg nyangkut pas user buru-buru klik Tutup), jangan sentuh DOM lagi --
+  // percuma & closeStatsModal() sudah menghentikan polling berikutnya.
+  if(el('statsModal').style.display === 'none') return;
+
+  const printOk = typeof stats.printDirect === 'number';
+  const pdfOk = typeof stats.downloadPdf === 'number';
+
+  if(printOk){
+    animateStatNumber(printEl, statsDisplayed.printDirect, stats.printDirect);
+    statsDisplayed.printDirect = stats.printDirect;
+    printEl.classList.remove('stats-num-error');
+  } else if(!silent){
     printEl.textContent = '—';
     printEl.classList.add('stats-num-error');
-  } else {
-    printEl.textContent = stats.printDirect.toLocaleString('id-ID');
   }
 
-  if(stats.downloadPdf === null){
+  if(pdfOk){
+    animateStatNumber(pdfEl, statsDisplayed.downloadPdf, stats.downloadPdf);
+    statsDisplayed.downloadPdf = stats.downloadPdf;
+    pdfEl.classList.remove('stats-num-error');
+  } else if(!silent){
     pdfEl.textContent = '—';
     pdfEl.classList.add('stats-num-error');
-  } else {
-    pdfEl.textContent = stats.downloadPdf.toLocaleString('id-ID');
   }
 
   if(notConfigured){
     lastUsedEl.textContent = 'Statistik belum aktif — backend penyimpanan data belum dikonfigurasi.';
-  } else if(stats.printDirect === null && stats.downloadPdf === null){
-    lastUsedEl.textContent = 'Gagal memuat data dari server statistik. Coba "Muat Ulang" dulu — kalau masih gagal, kemungkinan besar ada masalah di backend (deployment Apps Script), bukan koneksi internet kamu. Cek Console (F12) untuk detail error, atau hubungi pengelola aplikasi.';
-  } else if(stats.lastUsedAt){
-    lastUsedEl.textContent = `Terakhir digunakan ${formatRelativeTime(stats.lastUsedAt)}`;
+    if(liveDotEl) liveDotEl.style.display = 'none';
+  } else if(!printOk && !pdfOk){
+    // Gagal total: kalau manual, tampilkan pesan error spt semula. Kalau
+    // silent (polling di background), biarkan teks footer & angka terakhir
+    // apa adanya -- graceful, gak nakut-nakutin user dgn pesan error tiap
+    // 6 detik gara-gara koneksi kedip sesaat.
+    if(!silent){
+      lastUsedEl.textContent = 'Gagal memuat data dari server statistik. Coba "Muat Ulang" dulu — kalau masih gagal, kemungkinan besar ada masalah di backend (deployment Apps Script), bukan koneksi internet kamu. Cek Console (F12) untuk detail error, atau hubungi pengelola aplikasi.';
+      if(liveDotEl) liveDotEl.style.display = 'none';
+    }
   } else {
-    lastUsedEl.textContent = 'Belum ada aktivitas cetak atau unduh yang tercatat.';
+    if(liveDotEl) liveDotEl.style.display = '';
+    if(stats.lastUsedAt){
+      lastUsedEl.textContent = `Terakhir digunakan ${formatRelativeTime(stats.lastUsedAt)}`;
+    } else {
+      lastUsedEl.textContent = 'Belum ada aktivitas cetak atau unduh yang tercatat.';
+    }
   }
 
-  refreshBtn.classList.remove('is-loading');
-  refreshBtn.disabled = false;
+  if(!silent){
+    refreshBtn.classList.remove('is-loading');
+    refreshBtn.disabled = false;
+  }
 }
 
 el('btnOpenStats').addEventListener('click', openStatsModal);

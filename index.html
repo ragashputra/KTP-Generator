@@ -754,6 +754,19 @@
 
   /* ============ Statistik Penggunaan modal ============ */
   .stats-modal{max-width:460px;}
+  .stats-title-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .stats-title-row h3{margin:0;}
+  .stats-live-badge{
+    display:inline-flex;align-items:center;gap:5px;
+    font-family:var(--font-body);font-size:var(--fs-2xs);font-weight:700;
+    letter-spacing:.4px;text-transform:uppercase;
+    color:#3fb950;background:rgba(63,185,80,.12);
+    border:1px solid rgba(63,185,80,.3);
+    border-radius:999px;padding:3px 8px 3px 6px;
+  }
+  .stats-live-dot{width:6px;height:6px;border-radius:50%;background:#3fb950;animation:pulse 1.4s infinite;}
+  .stats-card-num.is-updating{animation:statsNumFlash .5s ease;}
+  @keyframes statsNumFlash{0%{color:var(--accent-hover);}100%{color:var(--ink);}}
   .stats-grid{
     display:grid;grid-template-columns:1fr 1fr;gap:12px;
     margin-bottom:14px;
@@ -1134,8 +1147,11 @@
 <div class="modal-backdrop" id="statsModal" style="display:none;" onclick="if(event.target===this) closeStatsModal()">
   <div class="modal stats-modal">
     <button class="modal-close" onclick="closeStatsModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-    <h3>Statistik Penggunaan</h3>
-    <p class="hint">Data gabungan dari seluruh pengguna aplikasi ini, bukan hanya perangkat Anda. Berguna untuk memantau apakah pengguna masih mencetak secara manual (Download PDF) atau sudah memanfaatkan fitur Cetak Langsung.</p>
+    <div class="stats-title-row">
+      <h3>Statistik Penggunaan</h3>
+      <span class="stats-live-badge" id="statsLiveDot" style="display:none;"><span class="stats-live-dot"></span>Live</span>
+    </div>
+    <p class="hint">Data gabungan dari seluruh pengguna aplikasi ini, bukan hanya perangkat Anda. Angka diperbarui otomatis selagi panel ini terbuka.</p>
 
     <div class="stats-grid" id="statsGrid">
       <div class="stats-card">
