@@ -590,6 +590,48 @@
     animation:pulse 1s ease-in-out infinite;
     flex-shrink:0;
   }
+  /* Magnifier loupe — kaca pembesar kecil yg muncul & mengikuti jari/
+     kursor selagi drag sudut kotak hijau crop. Ditempel ke <body> dgn
+     position:fixed (lihat ensureLoupeEl di app.js utk alasannya),
+     posisinya dihitung & diupdate lewat JS (showLoupe()) tiap kali jari
+     bergerak. z-index sangat tinggi krn harus selalu di atas SEMUA
+     layer modal, bukan cuma canvas & badge di dalam crop-stage. */
+  .crop-loupe{
+    display:none;
+    position:fixed;
+    width:132px;height:132px;
+    border-radius:50%;
+    border:3px solid var(--accent-hover);
+    box-shadow:var(--shadow-lg), 0 0 0 1px rgba(0,0,0,.3);
+    overflow:hidden;
+    pointer-events:none;
+    z-index:2000;
+    /* -50%,-100% menempatkan loupe pas di atas titik acuan (bukan di
+       tengahnya) -- ini SATU-SATUNYA mekanisme geser-ke-atas yg
+       dipakai; app.js TIDAK boleh menambah offset Y manual lagi di atas
+       ini (dulu ada LOUPE_OFFSET_Y yg tumpang tindih dgn transform ini,
+       itu penyebab loupe dulu nongol jauh melenceng ke atas layar). */
+    transform:translate(-50%, calc(-100% - 18px));
+    background:#000;
+  }
+  .crop-loupe canvas{
+    display:block;width:100%;height:100%;
+    image-rendering:pixelated;
+  }
+  .crop-loupe-cross{
+    position:absolute;top:50%;left:50%;
+    width:16px;height:16px;
+    transform:translate(-50%,-50%);
+    pointer-events:none;
+  }
+  .crop-loupe-cross::before,.crop-loupe-cross::after{
+    content:'';position:absolute;background:rgba(255,255,255,.55);
+  }
+  .crop-loupe-cross::before{left:50%;top:0;width:1px;height:100%;transform:translateX(-50%);}
+  .crop-loupe-cross::after{top:50%;left:0;height:1px;width:100%;transform:translateY(-50%);}
+  @media (max-width:520px){
+    .crop-loupe{width:112px;height:112px;}
+  }
   .zoom-row{
     display:flex;align-items:center;gap:12px;
     margin-top:10px;
@@ -923,7 +965,7 @@
     <div class="crop-stage" id="cropStage">
       <canvas id="cropCanvas"></canvas>
     </div>
-    <p class="hint" style="margin-top:8px;font-size:11.5px;">Tips: perbesar dulu kalau mau geser sudut kotak hijau lebih presisi, lalu geser gambar dengan drag/scroll.</p>
+    <p class="hint" style="margin-top:8px;font-size:11.5px;">Tips: saat menggeser sudut kotak hijau, kaca pembesar otomatis muncul menunjukkan tepi kartu diperbesar 3× — geser sampai titik hijau pas di ujung fisik KTP.</p>
     <div class="zoom-row">
       <div class="txt">
         <b>Perbesar Tampilan</b>

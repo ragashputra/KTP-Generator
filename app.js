@@ -155,6 +155,7 @@ let cropQuad = null; // {tl,tr,br,bl} in canvas-space (working/downscaled space)
 let cropSourceCanvas = null;
 let cropZoom = 1; // 1 = fit-to-stage (100%); actual on-screen canvas size = baseFitSize * cropZoom
 let cropBaseFitW = 0, cropBaseFitH = 0; // canvas CSS size (px) at 100% zoom, i.e. fitted inside the stage
+let cropDetectRunToken = 0; // dinaikkan tiap kali autoDetectCrop dipanggil; membatalkan hasil dari panggilan sebelumnya yg belum selesai (mis. user cepat ganti foto/rotasi berturut-turut)
 
 // Antrian crop utk upload banyak sekaligus: foto dibuka satu per satu di
 // editor crop, URUT dari yang pertama diupload sampai yang terakhir,
@@ -793,20 +794,29 @@ function bindZoomButtons(){
   if(resetBtn) resetBtn.onclick = ()=> setCropZoom(1);
 }
 
+let rotateDebounceTimer = null;
 function bindRotateButtons(card){
-  el('btnRotateLeft').onclick = ()=>{
-    card.rotation = (((card.rotation||0) - 90) % 360 + 360) % 360;
-    rebuildCropStage(card);
-  };
-  el('btnRotateRight').onclick = ()=>{
-    card.rotation = (((card.rotation||0) + 90) % 360 + 360) % 360;
-    rebuildCropStage(card);
-  };
+  // Debounce: kalau user pencet rotate cepat berturut-turut (mis. tap
+  // 3x buat muter 270°), rebuildCropStage (yg didalamnya ada
+  // autoDetectCrop, paling berat di seluruh alur crop) cuma dijalankan
+  // SEKALI, ~180ms setelah klik terakhir -- bukan tiap klik. Ini yg
+  // paling kerasa bikin "berat/nge-lag" sebelumnya: tiap klik numpuk
+  // kerjaan baru sebelum yg lama sempat selesai, jadi beberapa proses
+  // Sobel+Hough berat jalan bertumpuk di main thread yg sama.
+  function rotate(delta){
+    card.rotation = (((card.rotation||0) + delta) % 360 + 360) % 360;
+    clearTimeout(rotateDebounceTimer);
+    rotateDebounceTimer = setTimeout(()=>rebuildCropStage(card), 180);
+  }
+  el('btnRotateLeft').onclick = ()=> rotate(-90);
+  el('btnRotateRight').onclick = ()=> rotate(90);
 }
 
 function closeCropModal(){
   el('cropModal').style.display = 'none';
   activeCropId = null;
+  dragCorner = null;
+  hideLoupe(); // jaga-jaga kalau modal ditutup di tengah drag sudut, loupe (skrg child <body>) gak nyangkut kelihatan
   // Kalau ini bagian dari upload banyak sekaligus, lanjut otomatis ke
   // foto berikutnya dalam antrian (baik setelah simpan maupun dilewati).
   advanceCropQueue();
@@ -927,7 +937,7 @@ function otsuThreshold(mag, w, h){
 // sudut yang bikin quad hasil akhir "melenceng" beberapa derajat.
 function houghLines(mag, w, h, thresh){
   const diag = Math.ceil(Math.sqrt(w*w+h*h));
-  const thetaSteps = 360; // 0.5 degree resolution
+  const thetaSteps = 180; // 1 degree resolution -- cukup krn refineQuadCorners menempelkan sudut ke tepi tajam setelahnya, jadi presisi sub-derajat di tahap Hough tidak terlalu menentukan hasil akhir; 180 steps = separuh beban komputasi dari 360 steps.
   const rhoOffset = diag;
   const rhoSize = diag*2;
   const acc = new Int32Array(thetaSteps*rhoSize);
@@ -1190,20 +1200,56 @@ function bboxFallback(mag, w, h){
 // blur), baru dicoba threshold makin longgar yg menangkap lebih banyak
 // tepi lemah -- trade-off presisi vs recall, dicoba bertahap drpd
 // langsung pilih satu angka tetap yg belum tentu pas utk semua foto.
-const HOUGH_THRESH_LEVELS = [0.35, 0.22, 0.14, 0.08];
+// Cuma 2 level (bukan 4) -- lebih dari itu bikin Hough dipanggil ulang
+// berkali-kali dgn biaya besar utk manfaat yg makin kecil; 2 level sudah
+// menutup mayoritas kasus (kontras bagus -> ketat; kontras lemah -> longgar).
+const HOUGH_THRESH_LEVELS = [0.30, 0.12];
+
+// Deteksi tepi (Sobel+Hough) dijalankan di resolusi kerja terpisah yang
+// JAUH lebih kecil dari canvas tampilan (900px) -- proses O(w*h) Sobel
+// dan O(edge_pixels * 360_sudut) Hough itu kuadratik terhadap resolusi,
+// jadi turun dari 900px ke 480px saja sudah memangkas beban kerja
+// sekitar 3.5x (900²/480² ≈ 3.5). Hasil quad lalu di-scale balik ke
+// resolusi 900px sebelum dipakai sbg overlay/crop -- akurasi akhir tidak
+// berkurang berarti karena refineQuadCorners tetap menempelkan sudut ke
+// tepi tajam, dan crop final selalu diambil dari rawImg beresolusi penuh
+// (lihat applyPerspectiveCrop), bukan dari canvas kerja 480px ini.
+const DETECT_WORK_DIM = 480;
+
+function buildDetectionCanvas(canvas){
+  const scale = Math.min(1, DETECT_WORK_DIM / Math.max(canvas.width, canvas.height));
+  if(scale >= 1) return { detCanvas: canvas, detScale: 1 };
+  const detCanvas = document.createElement('canvas');
+  detCanvas.width = Math.max(1, Math.round(canvas.width*scale));
+  detCanvas.height = Math.max(1, Math.round(canvas.height*scale));
+  const dctx = detCanvas.getContext('2d');
+  dctx.drawImage(canvas, 0, 0, detCanvas.width, detCanvas.height);
+  return { detCanvas, detScale: scale };
+}
+
+function scaleQuad(quad, factor){
+  const out = {};
+  for(const k of ['tl','tr','br','bl']){
+    out[k] = { x: quad[k].x/factor, y: quad[k].y/factor };
+  }
+  return out;
+}
 
 function autoDetectCrop(){
   const canvas = cropSourceCanvas;
+  const runToken = ++cropDetectRunToken; // batalkan hasil kalau modal sudah pindah foto/rotasi sebelum proses ini selesai
   setCropDetecting(true);
 
-  // requestAnimationFrame supaya browser sempat render status "mendeteksi"
-  // dulu sebelum komputasi berat (Sobel + Otsu + multi-pass Hough) mem-
-  // blok main thread -- pada foto beresolusi tinggi proses ini bisa makan
-  // beberapa ratus ms, tanpa ini UI terasa macet/freeze sesaat.
+  // requestAnimationFrame supaya browser sempat render badge "mendeteksi"
+  // dulu sebelum komputasi Sobel+Hough mem-blok main thread sesaat --
+  // tanpa ini UI terasa nge-freeze walau cuma beberapa puluh ms.
   requestAnimationFrame(()=>{
+    if(runToken !== cropDetectRunToken) return;
+
     let quad = null;
     try{
-      const { w, h, mag } = computeEdges(canvas);
+      const { detCanvas, detScale } = buildDetectionCanvas(canvas);
+      const { w, h, mag } = computeEdges(detCanvas);
       const otsu = otsuThreshold(mag, w, h);
 
       for(const level of HOUGH_THRESH_LEVELS){
@@ -1213,41 +1259,49 @@ function autoDetectCrop(){
       }
 
       if(quad){
-        // Tempelkan tiap sudut ke tepi tajam terdekat (koreksi presisi),
-        // baru setelah itu beri padding tipis ke dalam.
         quad = refineQuadCorners(quad, mag, w, h);
-        const cx = (quad.tl.x+quad.tr.x+quad.br.x+quad.bl.x)/4;
-        const cy = (quad.tl.y+quad.tr.y+quad.br.y+quad.bl.y)/4;
-        const padFactor = 0.985;
-        for(const k of ['tl','tr','br','bl']){
-          quad[k].x = cx + (quad[k].x-cx)*padFactor;
-          quad[k].y = cy + (quad[k].y-cy)*padFactor;
-        }
-      }
-
-      if(!quad){
+      } else {
         quad = bboxFallback(mag, w, h);
       }
 
-      // clamp to canvas bounds — if the quad still overshoots past the
-      // edge after clamping (a sign the detected line was bad, not just
-      // slightly wide), it's safer to discard it and use the bbox
-      // fallback instead of showing an obviously-wrong oversized box.
+      // Scale balik ke resolusi canvas tampilan (900px) kalau deteksi
+      // tadi dijalankan di canvas kerja yg lebih kecil.
+      if(detScale < 1){
+        quad = scaleQuad(quad, detScale);
+      }
+
+      const cx = (quad.tl.x+quad.tr.x+quad.br.x+quad.bl.x)/4;
+      const cy = (quad.tl.y+quad.tr.y+quad.br.y+quad.bl.y)/4;
+      const padFactor = 0.985;
+      for(const k of ['tl','tr','br','bl']){
+        quad[k].x = cx + (quad[k].x-cx)*padFactor;
+        quad[k].y = cy + (quad[k].y-cy)*padFactor;
+      }
+
+      // clamp ke bound canvas tampilan -- kalau masih overshoot stlh
+      // clamp (tanda garis yg kedeteksi memang bermasalah), lebih aman
+      // jatuh ke bbox fallback drpd nampilin kotak yg jelas salah.
       const overshoots = ['tl','tr','br','bl'].some(k=>
-        quad[k].x < -2 || quad[k].x > w+2 || quad[k].y < -2 || quad[k].y > h+2
+        quad[k].x < -2 || quad[k].x > canvas.width+2 || quad[k].y < -2 || quad[k].y > canvas.height+2
       );
       if(overshoots){
-        quad = bboxFallback(mag, w, h);
+        // Pakai mag/w/h yg sudah dihitung di atas (JANGAN panggil
+        // computeEdges ulang -- itu proses Sobel yg cukup mahal, gak
+        // perlu dihitung dua kali cuma buat fallback ini).
+        let bb = bboxFallback(mag, w, h);
+        if(detScale < 1) bb = scaleQuad(bb, detScale);
+        quad = bb;
       }
       for(const k of ['tl','tr','br','bl']){
-        quad[k].x = Math.max(0, Math.min(w, quad[k].x));
-        quad[k].y = Math.max(0, Math.min(h, quad[k].y));
+        quad[k].x = Math.max(0, Math.min(canvas.width, quad[k].x));
+        quad[k].y = Math.max(0, Math.min(canvas.height, quad[k].y));
       }
     }catch(err){
       console.error('autoDetectCrop gagal, fallback ke crop penuh:', err);
       quad = { tl:{x:0,y:0}, tr:{x:canvas.width,y:0}, br:{x:canvas.width,y:canvas.height}, bl:{x:0,y:canvas.height} };
     }
 
+    if(runToken !== cropDetectRunToken) return;
     cropQuad = quad;
     setCropDetecting(false);
     drawCropOverlay();
@@ -1321,6 +1375,97 @@ function drawCropOverlay(){
 }
 
 let dragCorner = null;
+
+// ---- Magnifier loupe: kaca pembesar kecil yg muncul & mengikuti
+// jari/kursor selagi drag sudut kotak hijau, menampilkan area di sekitar
+// titik yg digeser dalam pembesaran 3x. Ini standar UX crop-tool kelas
+// atas (iOS Files/Photos, Adobe Scan) -- tanpa ini, presisi drag di HP
+// terbatas oleh ukuran jari yg menutupi area kecil yg mau dipas-kan;
+// dengan loupe, user bisa lihat persis pixel tepi kartu walau jari
+// menutupi titik aslinya. ----
+const LOUPE_SIZE = 132;   // diameter loupe on-screen (px CSS) — HARUS sama dgn width/height di CSS .crop-loupe
+const LOUPE_ZOOM = 3;     // faktor pembesaran konten di dalam loupe
+// Catatan: geser loupe ke atas titik sentuh (biar gak ketutup jari)
+// SEPENUHNYA diatur lewat CSS transform di .crop-loupe (translate
+// -100% + jarak tambahan), BUKAN di sini -- dulu ada offset manual di
+// JS yg tumpang tindih dgn transform CSS, itu bikin loupe nongol
+// melenceng jauh dari titik yg digeser (dobel-geser).
+
+function ensureLoupeEl(){
+  let loupe = el('cropLoupe');
+  if(!loupe){
+    // Ditempel ke <body> (bukan sbg child #cropStage) dgn position:fixed
+    // -- ini SENGAJA, bukan sembarang pilihan. #cropStage py overflow:auto
+    // (bisa discroll manual), dan elemen position:absolute di dalam
+    // container yg scrollable dihitung relatif thd CONTENT BOX container
+    // (termasuk area yg sudah discroll keluar dari pandangan), BUKAN
+    // relatif thd viewport yg keliatan. getBoundingClientRect() yg
+    // dipakai buat menghitung posisi loupe itu selalu berbasis viewport
+    // -- kalau loupe taruh di dalam #cropStage sbg absolute, dua sistem
+    // koordinat itu gak nyambung begitu user scroll/zoom crop-stage,
+    // hasilnya loupe nongol di tempat yg salah (persis bug yg kejadian).
+    // Solusinya: position:fixed langsung ke body, sistem koordinatnya
+    // otomatis selalu berbasis viewport, sama persis dgn
+    // getBoundingClientRect() -- gak ada lagi konversi yg bisa meleset.
+    loupe = document.createElement('div');
+    loupe.id = 'cropLoupe';
+    loupe.className = 'crop-loupe';
+    loupe.innerHTML = '<canvas id="cropLoupeCanvas"></canvas><div class="crop-loupe-cross"></div>';
+    document.body.appendChild(loupe);
+  }
+  return loupe;
+}
+
+function showLoupe(canvas, pos){
+  const loupe = ensureLoupeEl();
+  const loupeCanvas = el('cropLoupeCanvas');
+  loupeCanvas.width = LOUPE_SIZE;
+  loupeCanvas.height = LOUPE_SIZE;
+  const lctx = loupeCanvas.getContext('2d');
+  lctx.imageSmoothingEnabled = false; // pixelated crisp, biar tepi kartu kelihatan tajam bukan blur
+
+  const srcSize = LOUPE_SIZE/LOUPE_ZOOM;
+  const sx = pos.x - srcSize/2, sy = pos.y - srcSize/2;
+  lctx.clearRect(0,0,LOUPE_SIZE,LOUPE_SIZE);
+  lctx.drawImage(canvas, sx, sy, srcSize, srcSize, 0, 0, LOUPE_SIZE, LOUPE_SIZE);
+
+  // Gambar ulang posisi quad (relatif ke crop area yg diperbesar) di atas
+  // konten loupe, supaya user lihat persis sudut hijau vs tepi fisik
+  // kartu dalam pembesaran -- bukan cuma foto polos tanpa marker.
+  const q = cropQuad;
+  if(q && dragCorner){
+    const pt = q[dragCorner];
+    const lx = (pt.x - sx) * LOUPE_ZOOM;
+    const ly = (pt.y - sy) * LOUPE_ZOOM;
+    lctx.strokeStyle = '#238636';
+    lctx.lineWidth = 2;
+    lctx.beginPath();
+    lctx.arc(lx, ly, 7, 0, Math.PI*2);
+    lctx.stroke();
+    lctx.fillStyle = 'rgba(35,134,54,0.9)';
+    lctx.beginPath();
+    lctx.arc(lx, ly, 2.5, 0, Math.PI*2);
+    lctx.fill();
+  }
+
+  // Posisi loupe di layar: position:fixed thd viewport, jadi cukup
+  // pakai getBoundingClientRect() canvas langsung -- gak perlu lagi
+  // ngurusin offset/scroll #cropStage sama sekali (lihat catatan di
+  // ensureLoupeEl kenapa loupe ditempel ke <body>, bukan ke stage).
+  const rect = canvas.getBoundingClientRect();
+  const cssX = rect.left + (pos.x / canvas.width) * rect.width;
+  const cssY = rect.top + (pos.y / canvas.height) * rect.height;
+
+  loupe.style.left = cssX + 'px';
+  loupe.style.top = cssY + 'px';
+  loupe.style.display = 'block';
+}
+
+function hideLoupe(){
+  const loupe = el('cropLoupe');
+  if(loupe) loupe.style.display = 'none';
+}
+
 function bindCropDrag(canvas){
   function getPos(e){
     const rect = canvas.getBoundingClientRect();
@@ -1341,16 +1486,27 @@ function bindCropDrag(canvas){
   function start(e){
     const pos = getPos(e);
     dragCorner = nearestCorner(pos);
+    if(dragCorner) showLoupe(canvas, pos);
   }
+  let moveRaf = null;
   function move(e){
     if(!dragCorner) return;
     e.preventDefault();
     const pos = getPos(e);
     cropQuad[dragCorner].x = Math.max(0, Math.min(canvas.width, pos.x));
     cropQuad[dragCorner].y = Math.max(0, Math.min(canvas.height, pos.y));
-    drawCropOverlay();
+    // Throttle lewat requestAnimationFrame -- event mousemove/touchmove
+    // bisa nembak jauh lebih cepat dari refresh rate layar (terutama di
+    // trackpad/mouse presisi tinggi), redraw+loupe tiap event numpuk
+    // kerjaan yg gak perlu. rAF memastikan cuma 1 redraw per frame.
+    if(moveRaf) return;
+    moveRaf = requestAnimationFrame(()=>{
+      moveRaf = null;
+      drawCropOverlay();
+      showLoupe(canvas, pos);
+    });
   }
-  function end(){ dragCorner = null; }
+  function end(){ dragCorner = null; hideLoupe(); if(moveRaf){ cancelAnimationFrame(moveRaf); moveRaf=null; } }
 
   canvas.onmousedown = start;
   canvas.onmousemove = move;
