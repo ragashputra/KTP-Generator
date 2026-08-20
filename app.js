@@ -57,7 +57,7 @@ let printMode = 'COLOR';
 // Selama masih placeholder ini, fitur statistik akan gagal dgn aman
 // (fetchUsageStats mengembalikan null, trackUsage diam-diam gagal) —
 // TIDAK memengaruhi fitur cetak/download utama sama sekali.
-const STATS_API_BASE = 'https://script.google.com/macros/s/AKfycbz0WmYtgjoUr2QO5en_b8LdNP6asIv562jXqcRKn07Mc-GScFw1LLJHi2uF0aBZeEceUA/exec';
+const STATS_API_BASE = 'https://cetak-ktp-stats.ragashputra-ktp.workers.dev';
 
 // Menambah counter +1 di server (fire-and-forget). Sengaja TIDAK pernah
 // melempar error atau memblokir alur utama (download/print harus tetap
