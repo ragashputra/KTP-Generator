@@ -8,8 +8,10 @@
   try{
     var m = localStorage.getItem('ktp_mode');
     var t = localStorage.getItem('ktp_theme');
+    var h = localStorage.getItem('ktp_header');
     if(m === 'light') document.documentElement.setAttribute('data-mode','light');
     if(t && t !== 'green') document.documentElement.setAttribute('data-theme', t);
+    if(h && h !== 'default') document.documentElement.setAttribute('data-header', h);
   }catch(e){}
 })();
 </script>
@@ -96,6 +98,7 @@
     --header-bg:linear-gradient(180deg, rgba(22,27,34,.96), rgba(18,22,28,.94));
     --header-border:rgba(255,255,255,.09);
     --header-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 8px 24px rgba(1,4,9,.35);
+    --header-wave-opacity:.10;
     --partner-bg:rgba(255,255,255,.05);
     --partner-border:rgba(255,255,255,.12);
   }
@@ -124,6 +127,7 @@
     --header-bg:linear-gradient(180deg, rgba(255,255,255,.97), rgba(248,249,251,.95));
     --header-border:rgba(27,31,36,.08);
     --header-shadow:0 1px 0 rgba(255,255,255,.9) inset, 0 8px 24px rgba(31,35,40,.06);
+    --header-wave-opacity:.10;
     --partner-bg:rgba(27,31,36,.035);
     --partner-border:rgba(27,31,36,.1);
   }
@@ -155,6 +159,171 @@
     --accent:#12876f; --accent-hover:#1aa989;
     --accent-soft:rgba(26,169,137,.15); --accent-ring:rgba(26,169,137,.28);
   }
+
+  /* =========================================================
+     PRESET TEMA HEADER — diaktifkan via [data-header="..."] di
+     <html>, independen dari warna aksen di atas. REVISI v58: motif
+     tiap preset sekarang py WARNA ASLI YANG DIBAKAR LANGSUNG DI DALAM
+     SVG-nya (gradient/stroke/fill sungguhan), BUKAN lagi silhouette
+     satu-warna hasil mask+currentColor spt versi2 sebelumnya -- itu
+     sebabnya versi lama terasa "kurang proper": biarpun SVG-nya
+     digambar multi-warna, teknik mask hanya membaca bentuk/alpha-nya
+     & mewarnai ulang jadi satu warna polos, jadi detail warna
+     aslinya percuma. Sekarang header.top::before pakai background-
+     image biasa (bukan mask), sehingga tiap preset benar2 tampil
+     dgn kombinasi warna berlapis spt referensi banner premium asli
+     (aurora circles bergradasi, moiré pattern, silk ribbon dgn
+     gradient stroke, low-poly facet warna-warni, hex grid dgn aksen
+     emas, & garis emas mengkilap ala luxury banner). SVG yg sama
+     dipakai utk mode dark & light -- yg beda cuma --header-pattern-
+     opacity per mode (dark lbh pekat/jenuh, light jauh lbh tipis
+     spy jadi tint halus di atas latar terang, bukan dihilangkan).
+     ========================================================= */
+
+  /* --- Aurora Rings: lingkaran translucent bertumpuk ungu->teal->
+     magenta dgn glow radial di belakangnya, terinspirasi banner
+     "aurora/circle abstract" -- kesan premium/kreatif, ring2 besar
+     saling overpaint di kanan header --- */
+  html[data-header="aurora"]{
+    --header-bg:linear-gradient(120deg, rgba(46,26,74,.97) 0%, rgba(28,20,58,.96) 45%, rgba(18,26,48,.95) 100%);
+    --header-border:rgba(180,150,255,.16);
+    --header-shadow:0 1px 0 rgba(200,170,255,.06) inset, 0 8px 26px rgba(10,4,24,.5);
+    --header-wave-opacity:.07;
+    --header-pattern:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='140' viewBox='0 0 400 140'%3E%3Cdefs%3E%3CradialGradient id='auG1' cx='300' cy='70' r='90' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23a970d6' stop-opacity='.4'/%3E%3Cstop offset='1' stop-color='%23a970d6' stop-opacity='0'/%3E%3C/radialGradient%3E%3CradialGradient id='auG2' cx='355' cy='35' r='75' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%2340c9c0' stop-opacity='.35'/%3E%3Cstop offset='1' stop-color='%2340c9c0' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='300' cy='70' r='90' fill='url(%23auG1)'/%3E%3Ccircle cx='355' cy='35' r='75' fill='url(%23auG2)'/%3E%3Cg fill='none' stroke-width='1.1'%3E%3Ccircle cx='300' cy='70' r='58' stroke='%23a970d6' stroke-opacity='.6'/%3E%3Ccircle cx='300' cy='70' r='44' stroke='%23a970d6' stroke-opacity='.4' stroke-width='.7'/%3E%3Ccircle cx='355' cy='35' r='50' stroke='%2340c9c0' stroke-opacity='.6'/%3E%3Ccircle cx='355' cy='35' r='36' stroke='%2340c9c0' stroke-opacity='.4' stroke-width='.7'/%3E%3Ccircle cx='245' cy='105' r='40' stroke='%23c060a0' stroke-opacity='.5'/%3E%3Ccircle cx='245' cy='105' r='28' stroke='%23c060a0' stroke-opacity='.35' stroke-width='.7'/%3E%3C/g%3E%3C/svg%3E");
+    --header-pattern-opacity:.85;
+    --header-pattern-size:400px 140px;
+    --header-pattern-pos:top right;
+    --header-pattern-repeat:no-repeat;
+  }
+  html[data-header="aurora"][data-mode="light"]{
+    --header-bg:linear-gradient(120deg, rgba(247,244,253,.98) 0%, rgba(240,242,250,.97) 45%, rgba(236,247,246,.96) 100%);
+    --header-border:rgba(90,60,140,.13);
+    --header-shadow:0 1px 0 rgba(255,255,255,.9) inset, 0 8px 22px rgba(60,30,100,.07);
+    --header-wave-opacity:.05;
+    --header-pattern-opacity:.28;
+  }
+
+  /* --- Moiré Waves: dua set lingkaran konsentris ungu & teal yg
+     posisinya sengaja tumpang-tindih shg tepinya menciptakan efek
+     interferensi moiré, terinspirasi langsung banner "moiré pattern
+     background" -- kesan tech/premium yg halus & minimalis, beda
+     total dari sekadar titik-titik acak versi sebelumnya --- */
+  html[data-header="waveparticles"]{
+    --header-bg:linear-gradient(135deg, rgba(15,10,38,.97), rgba(8,6,24,.96));
+    --header-border:rgba(140,120,255,.15);
+    --header-shadow:0 1px 0 rgba(150,130,255,.06) inset, 0 8px 26px rgba(4,2,16,.5);
+    --header-wave-opacity:.08;
+    --header-pattern:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='360' height='120' viewBox='0 0 360 120'%3E%3Cg fill='none' stroke='%239c8bff' stroke-width='.6'%3E%3Ccircle cx='300' cy='90' r='10'/%3E%3Ccircle cx='300' cy='90' r='20'/%3E%3Ccircle cx='300' cy='90' r='30'/%3E%3Ccircle cx='300' cy='90' r='40'/%3E%3Ccircle cx='300' cy='90' r='50'/%3E%3Ccircle cx='300' cy='90' r='60'/%3E%3Ccircle cx='300' cy='90' r='70'/%3E%3Ccircle cx='300' cy='90' r='80'/%3E%3C/g%3E%3Cg fill='none' stroke='%2340c9c0' stroke-width='.6' stroke-opacity='.85'%3E%3Ccircle cx='250' cy='40' r='10'/%3E%3Ccircle cx='250' cy='40' r='20'/%3E%3Ccircle cx='250' cy='40' r='30'/%3E%3Ccircle cx='250' cy='40' r='40'/%3E%3Ccircle cx='250' cy='40' r='50'/%3E%3Ccircle cx='250' cy='40' r='60'/%3E%3Ccircle cx='250' cy='40' r='70'/%3E%3C/g%3E%3C/svg%3E");
+    --header-pattern-opacity:.6;
+    --header-pattern-size:360px 120px;
+    --header-pattern-pos:bottom right;
+    --header-pattern-repeat:no-repeat;
+  }
+  html[data-header="waveparticles"][data-mode="light"]{
+    --header-bg:linear-gradient(135deg, rgba(246,245,253,.98), rgba(238,240,251,.97));
+    --header-border:rgba(80,60,160,.13);
+    --header-shadow:0 1px 0 rgba(255,255,255,.9) inset, 0 8px 22px rgba(50,30,120,.07);
+    --header-wave-opacity:.055;
+    --header-pattern-opacity:.22;
+  }
+
+  /* --- Silk Lines: gradasi magenta->ungu tua + garis mesh melengkung
+     dgn STROKE GRADIENT sungguhan (bukan warna solid) dari pink muda
+     ke pink hampir putih, terinspirasi banner "silk/wave ribbon" --
+     kesan elegan & artistik, kini py 5 lapis garis (beda opacity)
+     shg terasa lbh berdimensi --- */
+  html[data-header="silk"]{
+    --header-bg:linear-gradient(115deg, rgba(64,16,54,.97) 0%, rgba(42,14,64,.96) 55%, rgba(20,16,44,.96) 100%);
+    --header-border:rgba(255,160,210,.14);
+    --header-shadow:0 1px 0 rgba(255,180,220,.06) inset, 0 8px 26px rgba(24,4,24,.5);
+    --header-wave-opacity:.08;
+    --header-pattern:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='380' height='125' viewBox='0 0 380 125'%3E%3Cdefs%3E%3ClinearGradient id='skG' x1='0' y1='0' x2='380' y2='0' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23ffb6de'/%3E%3Cstop offset='1' stop-color='%23ffe9f5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg fill='none' stroke='url(%23skG)' stroke-width='.9'%3E%3Cpath d='M60,0 C150,-4 140,40 230,24 C285,14 300,42 340,32 L380,28' stroke-opacity='.45'/%3E%3Cpath d='M90,0 C180,10 160,50 250,36 C300,28 315,54 340,48 L380,44' stroke-opacity='.65'/%3E%3Cpath d='M120,0 C200,20 180,60 260,50 C310,44 320,70 340,64 L380,60' stroke-opacity='.8'/%3E%3Cpath d='M150,0 C220,30 190,70 270,66 C315,60 325,84 340,80 L380,78' stroke-opacity='.65'/%3E%3Cpath d='M180,0 C240,40 210,80 280,80 C318,80 328,98 340,96 L380,94' stroke-opacity='.45'/%3E%3C/g%3E%3C/svg%3E");
+    --header-pattern-opacity:.7;
+    --header-pattern-size:380px 125px;
+    --header-pattern-pos:top right;
+    --header-pattern-repeat:no-repeat;
+  }
+  html[data-header="silk"][data-mode="light"]{
+    --header-bg:linear-gradient(115deg, rgba(253,246,251,.98) 0%, rgba(248,244,253,.97) 55%, rgba(242,244,251,.96) 100%);
+    --header-border:rgba(140,50,110,.13);
+    --header-shadow:0 1px 0 rgba(255,255,255,.9) inset, 0 8px 22px rgba(110,30,90,.07);
+    --header-wave-opacity:.05;
+    --header-pattern-opacity:.24;
+  }
+
+  /* --- Low Poly: facet segitiga penuh warna (biru tua -> biru muda
+     -> krem/emas) tersusun spt pecahan kaca, terinspirasi banner
+     "abstract low poly elegant design" -- tiap facet py fill warna
+     sungguhan (bukan siluet putih polos), kesan modern & mewah,
+     menutup seperempat kanan-atas header scr lbh penuh dr versi lama --- */
+  html[data-header="lowpoly"]{
+    --header-bg:linear-gradient(160deg, rgba(18,24,48,.97), rgba(12,16,34,.96));
+    --header-border:rgba(180,160,120,.14);
+    --header-shadow:0 1px 0 rgba(200,180,140,.05) inset, 0 8px 26px rgba(4,6,16,.5);
+    --header-wave-opacity:.07;
+    --header-pattern:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='130' viewBox='0 0 320 130'%3E%3Cg stroke='%23000' stroke-opacity='.15' stroke-width='.5'%3E%3Cpolygon points='140,0 190,0 165,32' fill='%232a3d6b'/%3E%3Cpolygon points='190,0 240,0 215,26 165,32' fill='%23355080'/%3E%3Cpolygon points='240,0 290,0 270,40 215,26' fill='%23496b96'/%3E%3Cpolygon points='290,0 320,0 320,34 270,40' fill='%235c7fa8'/%3E%3Cpolygon points='165,32 215,26 195,60 140,50' fill='%236c8fb0'/%3E%3Cpolygon points='215,26 270,40 250,66 195,60' fill='%23e8c78a'/%3E%3Cpolygon points='270,40 320,34 320,72 250,66' fill='%23d6b06a'/%3E%3Cpolygon points='140,50 195,60 175,100 120,90' fill='%237f9ec0'/%3E%3Cpolygon points='195,60 250,66 230,104 175,100' fill='%23f0d9a6'/%3E%3Cpolygon points='250,66 320,72 320,110 230,104' fill='%23e8c78a'/%3E%3Cpolygon points='120,90 175,100 160,130 90,130' fill='%2394add0'/%3E%3Cpolygon points='175,100 230,104 220,130 160,130' fill='%23f5e3ba'/%3E%3Cpolygon points='230,104 320,110 320,130 220,130' fill='%23e8c78a'/%3E%3C/g%3E%3C/svg%3E");
+    --header-pattern-opacity:.5;
+    --header-pattern-size:320px 130px;
+    --header-pattern-pos:top right;
+    --header-pattern-repeat:no-repeat;
+  }
+  html[data-header="lowpoly"][data-mode="light"]{
+    --header-bg:linear-gradient(160deg, rgba(245,247,252,.98), rgba(238,241,250,.97));
+    --header-border:rgba(120,100,60,.13);
+    --header-shadow:0 1px 0 rgba(255,255,255,.9) inset, 0 8px 22px rgba(40,50,90,.07);
+    --header-wave-opacity:.05;
+    --header-pattern-opacity:.32;
+  }
+
+  /* --- Hex Grid: honeycomb heksagonal biru-navy tersusun berulang,
+     dgn SATU sel emas terisi penuh tiap ubin (bukan lagi sekadar
+     garis putih tipis), terinspirasi persis banner "abstract
+     hexagonal header banners background" -- kesan struktural,
+     presisi & sedikit mewah krn aksen emasnya --- */
+  html[data-header="hexgrid"]{
+    --header-bg:linear-gradient(100deg, rgba(8,10,16,.98) 0%, rgba(14,18,28,.97) 60%, rgba(10,12,20,.97) 100%);
+    --header-border:rgba(220,170,90,.14);
+    --header-shadow:0 1px 0 rgba(220,170,90,.05) inset, 0 8px 26px rgba(2,3,6,.55);
+    --header-wave-opacity:.06;
+    --header-pattern:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='104' viewBox='0 0 120 104'%3E%3Cg fill='none' stroke='%23c9d6e8' stroke-opacity='.4' stroke-width='1'%3E%3Cpolygon points='15,1 45,1 60,26 45,51 15,51 0,26'/%3E%3Cpolygon points='75,1 105,1 120,26 105,51 75,51 60,26'/%3E%3Cpolygon points='15,53 45,53 60,78 45,103 15,103 0,78'/%3E%3C/g%3E%3Cpolygon points='75,53 105,53 120,78 105,103 75,103 60,78' fill='%23d9ac5c' fill-opacity='.45' stroke='%23e8c78a' stroke-opacity='.6' stroke-width='1'/%3E%3C/svg%3E");
+    --header-pattern-opacity:.65;
+    --header-pattern-size:120px 104px;
+    --header-pattern-pos:top right;
+    --header-pattern-repeat:repeat;
+  }
+  html[data-header="hexgrid"][data-mode="light"]{
+    --header-bg:linear-gradient(100deg, rgba(247,248,250,.98) 0%, rgba(243,245,249,.97) 60%, rgba(246,247,250,.97) 100%);
+    --header-border:rgba(140,100,30,.13);
+    --header-shadow:0 1px 0 rgba(255,255,255,.9) inset, 0 8px 22px rgba(30,30,40,.07);
+    --header-wave-opacity:.045;
+    --header-pattern-opacity:.24;
+  }
+
+  /* --- Luxury Gold: dasar hitam nyaris pekat + garis diagonal tipis
+     berwarna emas (bukan lagi putih polos) PLUS satu sapuan "shine"
+     diagonal terang yg melintas spt pantulan kilau kaca/logam,
+     terinspirasi persis banner "modern luxury shiny black with gold
+     lines elegant background" -- preset paling premium & formal,
+     cocok utk kesan korporat kelas atas --- */
+  html[data-header="speedlines"]{
+    --header-bg:linear-gradient(115deg, rgba(10,10,12,.98) 0%, rgba(16,14,16,.97) 55%, rgba(10,9,10,.97) 100%);
+    --header-border:rgba(217,172,92,.18);
+    --header-shadow:0 1px 0 rgba(217,172,92,.07) inset, 0 8px 26px rgba(2,2,3,.55);
+    --header-wave-opacity:.05;
+    --header-pattern:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='110' viewBox='0 0 300 110'%3E%3Cdefs%3E%3ClinearGradient id='glS' x1='0' y1='110' x2='300' y2='0' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='.3' stop-color='%23ffffff' stop-opacity='0'/%3E%3Cstop offset='.48' stop-color='%23ffe9b8' stop-opacity='.6'/%3E%3Cstop offset='.6' stop-color='%23ffffff' stop-opacity='0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg stroke='%23d9ac5c' stroke-width='1' stroke-opacity='.5' stroke-linecap='round'%3E%3Cline x1='40' y1='110' x2='100' y2='0'/%3E%3Cline x1='70' y1='110' x2='130' y2='0'/%3E%3Cline x1='100' y1='110' x2='155' y2='10'/%3E%3Cline x1='135' y1='110' x2='195' y2='0'/%3E%3Cline x1='170' y1='110' x2='220' y2='15'/%3E%3Cline x1='205' y1='110' x2='260' y2='5'/%3E%3Cline x1='240' y1='110' x2='290' y2='10'/%3E%3C/g%3E%3Crect x='0' y='0' width='300' height='110' fill='url(%23glS)'/%3E%3C/svg%3E");
+    --header-pattern-opacity:.8;
+    --header-pattern-size:300px 110px;
+    --header-pattern-pos:top right;
+    --header-pattern-repeat:no-repeat;
+  }
+  html[data-header="speedlines"][data-mode="light"]{
+    --header-bg:linear-gradient(115deg, rgba(250,248,244,.98) 0%, rgba(247,244,238,.97) 55%, rgba(250,247,241,.96) 100%);
+    --header-border:rgba(150,110,40,.15);
+    --header-shadow:0 1px 0 rgba(255,255,255,.9) inset, 0 8px 22px rgba(90,70,20,.07);
+    --header-wave-opacity:.04;
+    --header-pattern-opacity:.3;
+  }
+
 
   *{box-sizing:border-box;}
   html{-webkit-tap-highlight-color:transparent;}
@@ -225,13 +394,33 @@
     display:flex;align-items:center;justify-content:space-between;
     overflow:hidden;
   }
-  /* Motif gelombang halus di dasar header -- dekorasi murni, tidak
-     mengganggu keterbacaan konten di atasnya. Digambar pakai CSS mask
-     dari SVG wave, di-fill var(--accent) dgn opacity sangat rendah,
-     jadi warnanya OTOMATIS ikut berubah kalau user ganti tema warna
-     lewat menu Pengaturan (tidak perlu file/aset terpisah per tema).
-     Diposisikan absolute nempel di dasar header, tidak memengaruhi
-     layout/tinggi header sama sekali. */
+  /* Motif dekoratif dasar header -- dua layer independen supaya tiap
+     preset bisa punya "kepribadian" visual sendiri, bukan cuma ganti
+     warna wave yg sama:
+       ::before -> MOTIF UTAMA preset (var(--header-pattern)), sebuah
+                   SVG BERWARNA ASLI (gradient/stroke/fill sendiri,
+                   BUKAN mask satu-warna spt versi lama) dipasang lewat
+                   background-image biasa -- --header-pattern-size/
+                   --header-pattern-pos/--header-pattern-repeat/
+                   --header-pattern-opacity mengatur ukuran, posisi &
+                   ketebalannya per preset & per mode gelap/terang.
+       ::after  -> wave tipis SETIPIS 30px di dasar header (dipakai
+                   preset "default" & sbg lapisan halus tambahan di
+                   preset lain), warnanya var(--accent) supaya tetap
+                   otomatis ikut tema warna aksen yg dipilih user.
+     Kedua layer position:absolute murni dekorasi, tidak memengaruhi
+     layout/tinggi header sama sekali (header.top overflow:hidden). */
+  header.top::before{
+    content:'';
+    position:absolute;
+    inset:0;
+    pointer-events:none;
+    background-image:var(--header-pattern, none);
+    background-size:var(--header-pattern-size, cover);
+    background-position:var(--header-pattern-pos, center);
+    background-repeat:var(--header-pattern-repeat, no-repeat);
+    opacity:var(--header-pattern-opacity, 0);
+  }
   header.top::after{
     content:'';
     position:absolute;
@@ -239,7 +428,7 @@
     height:30px;
     pointer-events:none;
     background:var(--accent);
-    opacity:.10;
+    opacity:var(--header-wave-opacity, .10);
     -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 60' preserveAspectRatio='none'%3E%3Cpath d='M0,30 C150,60 350,0 600,25 C850,50 1050,5 1200,30 L1200,60 L0,60 Z'/%3E%3C/svg%3E");
     mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 60' preserveAspectRatio='none'%3E%3Cpath d='M0,30 C150,60 350,0 600,25 C850,50 1050,5 1200,30 L1200,60 L0,60 Z'/%3E%3C/svg%3E");
     -webkit-mask-size:100% 100%;
@@ -247,7 +436,7 @@
     -webkit-mask-repeat:no-repeat;
     mask-repeat:no-repeat;
   }
-  header.top .brand{display:flex;align-items:center;gap:11px;min-width:0;}
+  header.top .brand{display:flex;align-items:center;gap:11px;min-width:0;position:relative;z-index:1;}
   header.top .mark{
     width:34px;height:34px;border-radius:10px;
     background:var(--inverse);
@@ -267,7 +456,7 @@
     border:1px solid var(--border);
     flex-shrink:0;
   }
-  .header-actions{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+  .header-actions{display:flex;align-items:center;gap:10px;flex-shrink:0;position:relative;z-index:1;}
   @media (max-width:520px){
     .dropzone span{display:none;}
     .dropzone{padding:8px;}
@@ -515,6 +704,90 @@
     background:var(--accent);
     box-shadow:0 0 0 2px var(--surface);
   }
+
+  /* ============ Header-theme swatch — beda dari theme-swatch (warna
+     aksen) di atas: tiap opsi menampilkan potongan gradasi header asli
+     preset tsb (bukan dot warna polos), supaya user langsung kebayang
+     tampilannya sebelum diklik. Grid dibuat 2 kolom + label nama di
+     bawah tiap preview karena namanya (Graphite/Midnight/dst) perlu
+     dikenali, beda dgn theme-swatch warna yg cukup diwakili dot. ============ */
+  .header-theme-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+  .header-swatch{
+    border-radius:13px;
+    border:2px solid var(--border);
+    background:var(--surface);
+    cursor:pointer;
+    padding:4px;
+    display:flex;flex-direction:column;gap:7px;
+    transition:.15s ease;
+  }
+  .header-swatch:hover{border-color:var(--border-strong);transform:translateY(-1px);}
+  .header-swatch .preview{
+    height:34px;border-radius:9px;
+    position:relative;overflow:hidden;
+    border:1px solid rgba(255,255,255,.06);
+  }
+  /* ::before mereplikasi motif dekoratif utama tiap preset PAKAI SVG
+     BERWARNA ASLI YG SAMA PERSIS dgn header.top::before (bukan lagi
+     mask+currentColor satu-warna) -- jadi preview di modal Pengaturan
+     ini betul2 representatif thd tampilan header sungguhan, bukan
+     cuma janji gradasi warna doang. ::after tetap wave tipis generik
+     di dasar preview, konsisten dgn header.top::after asli. */
+  .header-swatch .preview::before{
+    content:'';position:absolute;inset:0;
+    background-image:var(--sw-pattern, none);
+    background-size:var(--sw-pattern-size, cover);
+    background-position:var(--sw-pattern-pos, top right);
+    background-repeat:var(--sw-pattern-repeat, no-repeat);
+    opacity:var(--sw-pattern-opacity, .5);
+  }
+  .header-swatch .preview::after{
+    content:'';position:absolute;left:0;right:0;bottom:0;height:12px;
+    background:currentColor;opacity:.14;
+    -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 60' preserveAspectRatio='none'%3E%3Cpath d='M0,30 C150,60 350,0 600,25 C850,50 1050,5 1200,30 L1200,60 L0,60 Z'/%3E%3C/svg%3E");
+    mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 60' preserveAspectRatio='none'%3E%3Cpath d='M0,30 C150,60 350,0 600,25 C850,50 1050,5 1200,30 L1200,60 L0,60 Z'/%3E%3C/svg%3E");
+    -webkit-mask-size:100% 100%;mask-size:100% 100%;
+    -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
+  }
+  .header-swatch[data-preview="default"] .preview{background:linear-gradient(180deg,#1b212b,#12161d);color:#7fd3ff;}
+  .header-swatch[data-preview="aurora"] .preview{
+    background:linear-gradient(120deg,#2e1a4a,#1c143a,#121a30);color:#fff;
+    --sw-pattern:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='140' viewBox='0 0 400 140'%3E%3Cdefs%3E%3CradialGradient id='auG1s' cx='300' cy='70' r='90' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23a970d6' stop-opacity='.4'/%3E%3Cstop offset='1' stop-color='%23a970d6' stop-opacity='0'/%3E%3C/radialGradient%3E%3CradialGradient id='auG2s' cx='355' cy='35' r='75' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%2340c9c0' stop-opacity='.35'/%3E%3Cstop offset='1' stop-color='%2340c9c0' stop-opacity='0'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='300' cy='70' r='90' fill='url(%23auG1s)'/%3E%3Ccircle cx='355' cy='35' r='75' fill='url(%23auG2s)'/%3E%3Cg fill='none' stroke-width='1.1'%3E%3Ccircle cx='300' cy='70' r='58' stroke='%23a970d6' stroke-opacity='.6'/%3E%3Ccircle cx='300' cy='70' r='44' stroke='%23a970d6' stroke-opacity='.4' stroke-width='.7'/%3E%3Ccircle cx='355' cy='35' r='50' stroke='%2340c9c0' stroke-opacity='.6'/%3E%3Ccircle cx='355' cy='35' r='36' stroke='%2340c9c0' stroke-opacity='.4' stroke-width='.7'/%3E%3Ccircle cx='245' cy='105' r='40' stroke='%23c060a0' stroke-opacity='.5'/%3E%3Ccircle cx='245' cy='105' r='28' stroke='%23c060a0' stroke-opacity='.35' stroke-width='.7'/%3E%3C/g%3E%3C/svg%3E");
+    --sw-pattern-size:130px 46px; --sw-pattern-pos:top right; --sw-pattern-opacity:.9;
+  }
+  .header-swatch[data-preview="waveparticles"] .preview{
+    background:linear-gradient(135deg,#0f0a26,#080618);color:#9c8bff;
+    --sw-pattern:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='360' height='120' viewBox='0 0 360 120'%3E%3Cg fill='none' stroke='%239c8bff' stroke-width='.6'%3E%3Ccircle cx='300' cy='90' r='10'/%3E%3Ccircle cx='300' cy='90' r='20'/%3E%3Ccircle cx='300' cy='90' r='30'/%3E%3Ccircle cx='300' cy='90' r='40'/%3E%3Ccircle cx='300' cy='90' r='50'/%3E%3Ccircle cx='300' cy='90' r='60'/%3E%3Ccircle cx='300' cy='90' r='70'/%3E%3Ccircle cx='300' cy='90' r='80'/%3E%3C/g%3E%3Cg fill='none' stroke='%2340c9c0' stroke-width='.6' stroke-opacity='.85'%3E%3Ccircle cx='250' cy='40' r='10'/%3E%3Ccircle cx='250' cy='40' r='20'/%3E%3Ccircle cx='250' cy='40' r='30'/%3E%3Ccircle cx='250' cy='40' r='40'/%3E%3Ccircle cx='250' cy='40' r='50'/%3E%3Ccircle cx='250' cy='40' r='60'/%3E%3Ccircle cx='250' cy='40' r='70'/%3E%3C/g%3E%3C/svg%3E");
+    --sw-pattern-size:120px 40px; --sw-pattern-pos:bottom right; --sw-pattern-opacity:.65;
+  }
+  .header-swatch[data-preview="silk"] .preview{
+    background:linear-gradient(115deg,#401036,#2a0e40,#14102c);color:#ffe9f5;
+    --sw-pattern:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='380' height='125' viewBox='0 0 380 125'%3E%3Cdefs%3E%3ClinearGradient id='skGs' x1='0' y1='0' x2='380' y2='0' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='%23ffb6de'/%3E%3Cstop offset='1' stop-color='%23ffe9f5'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg fill='none' stroke='url(%23skGs)' stroke-width='.9'%3E%3Cpath d='M60,0 C150,-4 140,40 230,24 C285,14 300,42 340,32 L380,28' stroke-opacity='.45'/%3E%3Cpath d='M90,0 C180,10 160,50 250,36 C300,28 315,54 340,48 L380,44' stroke-opacity='.65'/%3E%3Cpath d='M120,0 C200,20 180,60 260,50 C310,44 320,70 340,64 L380,60' stroke-opacity='.8'/%3E%3Cpath d='M150,0 C220,30 190,70 270,66 C315,60 325,84 340,80 L380,78' stroke-opacity='.65'/%3E%3Cpath d='M180,0 C240,40 210,80 280,80 C318,80 328,98 340,96 L380,94' stroke-opacity='.45'/%3E%3C/g%3E%3C/svg%3E");
+    --sw-pattern-size:130px 43px; --sw-pattern-pos:top right; --sw-pattern-opacity:.8;
+  }
+  .header-swatch[data-preview="lowpoly"] .preview{
+    background:linear-gradient(160deg,#121830,#0c1022);color:#e8c78a;
+    --sw-pattern:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='130' viewBox='0 0 320 130'%3E%3Cg stroke='%23000' stroke-opacity='.15' stroke-width='.5'%3E%3Cpolygon points='140,0 190,0 165,32' fill='%232a3d6b'/%3E%3Cpolygon points='190,0 240,0 215,26 165,32' fill='%23355080'/%3E%3Cpolygon points='240,0 290,0 270,40 215,26' fill='%23496b96'/%3E%3Cpolygon points='290,0 320,0 320,34 270,40' fill='%235c7fa8'/%3E%3Cpolygon points='165,32 215,26 195,60 140,50' fill='%236c8fb0'/%3E%3Cpolygon points='215,26 270,40 250,66 195,60' fill='%23e8c78a'/%3E%3Cpolygon points='270,40 320,34 320,72 250,66' fill='%23d6b06a'/%3E%3Cpolygon points='140,50 195,60 175,100 120,90' fill='%237f9ec0'/%3E%3Cpolygon points='195,60 250,66 230,104 175,100' fill='%23f0d9a6'/%3E%3Cpolygon points='250,66 320,72 320,110 230,104' fill='%23e8c78a'/%3E%3Cpolygon points='120,90 175,100 160,130 90,130' fill='%2394add0'/%3E%3Cpolygon points='175,100 230,104 220,130 160,130' fill='%23f5e3ba'/%3E%3Cpolygon points='230,104 320,110 320,130 220,130' fill='%23e8c78a'/%3E%3C/g%3E%3C/svg%3E");
+    --sw-pattern-size:105px 43px; --sw-pattern-pos:top right; --sw-pattern-opacity:.75;
+  }
+  .header-swatch[data-preview="hexgrid"] .preview{
+    background:linear-gradient(100deg,#08090c,#0e1120,#0a0c14);color:#fff;
+    --sw-pattern:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='104' viewBox='0 0 120 104'%3E%3Cg fill='none' stroke='%23c9d6e8' stroke-opacity='.4' stroke-width='1'%3E%3Cpolygon points='15,1 45,1 60,26 45,51 15,51 0,26'/%3E%3Cpolygon points='75,1 105,1 120,26 105,51 75,51 60,26'/%3E%3Cpolygon points='15,53 45,53 60,78 45,103 15,103 0,78'/%3E%3C/g%3E%3Cpolygon points='75,53 105,53 120,78 105,103 75,103 60,78' fill='%23d9ac5c' fill-opacity='.45' stroke='%23e8c78a' stroke-opacity='.6' stroke-width='1'/%3E%3C/svg%3E");
+    --sw-pattern-size:48px 42px; --sw-pattern-pos:top right; --sw-pattern-opacity:.8;
+    background-repeat:repeat;
+  }
+  .header-swatch[data-preview="speedlines"] .preview{
+    background:linear-gradient(115deg,#0a0a0c,#100e10,#0a090a);color:#eec87a;
+    --sw-pattern:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='110' viewBox='0 0 300 110'%3E%3Cdefs%3E%3ClinearGradient id='glSs' x1='0' y1='110' x2='300' y2='0' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='.3' stop-color='%23ffffff' stop-opacity='0'/%3E%3Cstop offset='.48' stop-color='%23ffe9b8' stop-opacity='.6'/%3E%3Cstop offset='.6' stop-color='%23ffffff' stop-opacity='0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg stroke='%23d9ac5c' stroke-width='1' stroke-opacity='.5' stroke-linecap='round'%3E%3Cline x1='40' y1='110' x2='100' y2='0'/%3E%3Cline x1='70' y1='110' x2='130' y2='0'/%3E%3Cline x1='100' y1='110' x2='155' y2='10'/%3E%3Cline x1='135' y1='110' x2='195' y2='0'/%3E%3Cline x1='170' y1='110' x2='220' y2='15'/%3E%3Cline x1='205' y1='110' x2='260' y2='5'/%3E%3Cline x1='240' y1='110' x2='290' y2='10'/%3E%3C/g%3E%3Crect x='0' y='0' width='300' height='110' fill='url(%23glSs)'/%3E%3C/svg%3E");
+    --sw-pattern-size:105px 39px; --sw-pattern-pos:top right; --sw-pattern-opacity:.9;
+  }
+  .header-swatch .label{
+    font-family:var(--font-body);font-size:10px;font-weight:600;
+    color:var(--ink-soft);text-align:center;padding-bottom:2px;
+    line-height:1.25;
+  }
+  .header-swatch.active{border-color:var(--accent);background:var(--accent-soft);}
+  .header-swatch.active .label{color:var(--ink);}
   .settings-modal{max-width:380px;}
 
   .btn{
@@ -1362,6 +1635,33 @@
         <button type="button" class="theme-swatch" data-swatch="orange" data-theme-value="orange" title="Oranye"><span class="dot"></span></button>
         <button type="button" class="theme-swatch" data-swatch="rose" data-theme-value="rose" title="Rose"><span class="dot"></span></button>
         <button type="button" class="theme-swatch" data-swatch="teal" data-theme-value="teal" title="Teal"><span class="dot"></span></button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h4>Tema Header</h4>
+      <div class="header-theme-grid" id="headerThemeGrid">
+        <button type="button" class="header-swatch" data-preview="default" data-header-value="default" title="Default (Slate)">
+          <span class="preview"></span><span class="label">Default</span>
+        </button>
+        <button type="button" class="header-swatch" data-preview="aurora" data-header-value="aurora" title="Aurora Rings">
+          <span class="preview"></span><span class="label">Aurora Rings</span>
+        </button>
+        <button type="button" class="header-swatch" data-preview="waveparticles" data-header-value="waveparticles" title="Moiré Waves">
+          <span class="preview"></span><span class="label">Moiré Waves</span>
+        </button>
+        <button type="button" class="header-swatch" data-preview="silk" data-header-value="silk" title="Silk Lines">
+          <span class="preview"></span><span class="label">Silk Lines</span>
+        </button>
+        <button type="button" class="header-swatch" data-preview="lowpoly" data-header-value="lowpoly" title="Low Poly">
+          <span class="preview"></span><span class="label">Low Poly</span>
+        </button>
+        <button type="button" class="header-swatch" data-preview="hexgrid" data-header-value="hexgrid" title="Hex Grid">
+          <span class="preview"></span><span class="label">Hex Grid</span>
+        </button>
+        <button type="button" class="header-swatch" data-preview="speedlines" data-header-value="speedlines" title="Luxury Gold">
+          <span class="preview"></span><span class="label">Luxury Gold</span>
+        </button>
       </div>
     </div>
   </div>

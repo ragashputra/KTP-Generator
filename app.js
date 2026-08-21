@@ -3228,7 +3228,9 @@ function showSwUpdateToast(){
 // (klik ganti tema/mode, sinkronisasi UI toggle, dst).
 const THEME_STORAGE_KEY = 'ktp_theme';
 const MODE_STORAGE_KEY  = 'ktp_mode';
+const HEADER_STORAGE_KEY = 'ktp_header';
 const VALID_THEMES = ['green','blue','purple','orange','rose','teal'];
+const VALID_HEADER_THEMES = ['default','aurora','waveparticles','silk','lowpoly','hexgrid','speedlines'];
 
 function getSavedTheme(){
   try{
@@ -3241,6 +3243,12 @@ function getSavedMode(){
     return localStorage.getItem(MODE_STORAGE_KEY) === 'light' ? 'light' : 'dark';
   }catch(e){ return 'dark'; }
 }
+function getSavedHeaderTheme(){
+  try{
+    const h = localStorage.getItem(HEADER_STORAGE_KEY);
+    return VALID_HEADER_THEMES.includes(h) ? h : 'default';
+  }catch(e){ return 'default'; }
+}
 
 function applyTheme(theme){
   if(theme === 'green'){
@@ -3249,6 +3257,16 @@ function applyTheme(theme){
     document.documentElement.setAttribute('data-theme', theme);
   }
   try{ localStorage.setItem(THEME_STORAGE_KEY, theme); }catch(e){}
+  syncSettingsUI();
+}
+
+function applyHeaderTheme(headerTheme){
+  if(headerTheme === 'default'){
+    document.documentElement.removeAttribute('data-header');
+  }else{
+    document.documentElement.setAttribute('data-header', headerTheme);
+  }
+  try{ localStorage.setItem(HEADER_STORAGE_KEY, headerTheme); }catch(e){}
   syncSettingsUI();
 }
 
@@ -3272,9 +3290,13 @@ function applyMode(mode){
 function syncSettingsUI(){
   const currentTheme = getSavedTheme();
   const currentMode = getSavedMode();
+  const currentHeaderTheme = getSavedHeaderTheme();
 
   document.querySelectorAll('.theme-swatch').forEach(btn=>{
     btn.classList.toggle('active', btn.dataset.themeValue === currentTheme);
+  });
+  document.querySelectorAll('.header-swatch').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.headerValue === currentHeaderTheme);
   });
   const darkOpt = el('modeOptDark');
   const lightOpt = el('modeOptLight');
@@ -3296,9 +3318,13 @@ function initThemeSettings(){
   // dari tab lain sejak halaman pertama dimuat).
   applyTheme(getSavedTheme());
   applyMode(getSavedMode());
+  applyHeaderTheme(getSavedHeaderTheme());
 
   document.querySelectorAll('.theme-swatch').forEach(btn=>{
     btn.addEventListener('click', ()=> applyTheme(btn.dataset.themeValue));
+  });
+  document.querySelectorAll('.header-swatch').forEach(btn=>{
+    btn.addEventListener('click', ()=> applyHeaderTheme(btn.dataset.headerValue));
   });
   const darkOpt = el('modeOptDark');
   const lightOpt = el('modeOptLight');
