@@ -71,24 +71,37 @@ const STATS_API_BASE = 'https://cetak-ktp-stats.ragashputra-ktp.workers.dev';
 // melempar error atau memblokir alur utama (download/print harus tetap
 // selesai walau internet lagi mati atau layanan statistik down) — makanya
 // pakai .catch(()=>{}) diam-diam, bukan await di jalur kritikal.
+//
+// cache:'no-store' + parameter _t (timestamp) dipasang sbg DUA lapis
+// pertahanan supaya request ke server statistik TIDAK PERNAH kebaca dari
+// cache manapun -- baik cache HTTP browser sendiri, Service Worker (lihat
+// NETWORK_ONLY_HOSTS di sw.js), maupun proxy/CDN pihak ketiga yg mungkin
+// duduk di depan Worker & ikut nge-cache respons GET tanpa kita minta.
 function trackUsage(kind){
   if(!STATS_API_BASE || STATS_API_BASE.startsWith('GANTI_')) return;
-  fetch(`${STATS_API_BASE}?action=hit&key=${kind}`).catch(()=>{});
+  fetch(`${STATS_API_BASE}?action=hit&key=${kind}&_t=${Date.now()}`, { cache:'no-store' }).catch(()=>{});
 }
 
 // Mengambil kedua angka counter + timestamp terakhir dipakai dari server
 // (satu request lewat action=getAll) utk ditampilkan di panel statistik.
-// Dipanggil hanya saat panel dibuka (bukan terus-menerus), supaya hemat
-// request. Mengembalikan semua field null kalau gagal fetch (mis.
-// offline, atau STATS_API_BASE belum diisi), sehingga UI bisa
-// menampilkan pesan yang jelas alih-alih diam-diam menampilkan 0 yang
-// menyesatkan.
+// Dipanggil saat panel dibuka, saat auto-polling selagi panel kebuka, DAN
+// saat tab kembali aktif/online (lihat listener visibilitychange & online
+// di bawah) — bukan cuma sekali doang, supaya angka yg kelihatan selalu
+// representatif kondisi terkini server, bukan sekadar snapshot lama.
+// Mengembalikan semua field null kalau gagal fetch (mis. offline, atau
+// STATS_API_BASE belum diisi), sehingga UI bisa menampilkan pesan yang
+// jelas alih-alih diam-diam menampilkan 0 yang menyesatkan.
 async function fetchUsageStats(){
   if(!STATS_API_BASE || STATS_API_BASE.startsWith('GANTI_')){
     return { printDirect: null, downloadPdf: null, lastUsedAt: null };
   }
   try{
-    const res = await fetch(`${STATS_API_BASE}?action=getAll`);
+    // cache:'no-store' = permintaan browser TIDAK boleh dipenuhi dari HTTP
+    // cache lokal sama sekali (beda dgn 'no-cache' yg masih boleh revalidate
+    // pakai cache) + parameter _t unik tiap panggilan supaya URL-nya selalu
+    // berbeda -- jaring pengaman ekstra kalau ada layer cache lain (mis.
+    // CDN di depan Worker) yg mengabaikan header cache-control.
+    const res = await fetch(`${STATS_API_BASE}?action=getAll&_t=${Date.now()}`, { cache:'no-store' });
     if(!res.ok){
       console.warn(`[Statistik] Server merespons HTTP ${res.status} (bukan 200). Cek apakah deployment Apps Script masih aktif & "Who has access" = Anyone.`);
       return { printDirect: null, downloadPdf: null, lastUsedAt: null };
@@ -194,8 +207,22 @@ function toast(msg, ms=3600, type='success'){
   toastIcnEl.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${TOAST_ICONS[type] || TOAST_ICONS.success}</svg>`;
   toastIcnEl.className = 'toast-icn' + (type !== 'success' ? ' ' + type : '');
   toastEl.classList.add('show');
+  toastEl.classList.remove('toast-persistent');
   clearTimeout(toast._t);
   toast._t = setTimeout(()=>toastEl.classList.remove('show'), ms);
+}
+
+// Varian toast KHUSUS utk notifikasi "versi baru siap" -- beda dari
+// toast() biasa krn: (1) berisi tombol aksi (bukan cuma teks polos), jadi
+// perlu innerHTML; (2) TIDAK auto-hide sendiri (user harus baca & pilih
+// muat ulang atau menutupnya) supaya tidak terlewat kalau user sedang
+// fokus di tengah proses crop/isi data.
+function toastPersistent(html, type='info'){
+  toastMsgEl.innerHTML = html;
+  toastIcnEl.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${TOAST_ICONS[type] || TOAST_ICONS.success}</svg>`;
+  toastIcnEl.className = 'toast-icn' + (type !== 'success' ? ' ' + type : '');
+  clearTimeout(toast._t); // batalkan auto-hide toast biasa yg mungkin masih terjadwal
+  toastEl.classList.add('show', 'toast-persistent');
 }
 
 // ---------- Paper size selector ----------
@@ -706,6 +733,24 @@ function startStatsPolling(){
 function stopStatsPolling(){
   if(statsPollTimer){ clearInterval(statsPollTimer); statsPollTimer = null; }
 }
+
+// ---------- Refresh statistik saat tab kembali aktif / koneksi pulih ----------
+// Selain polling tiap 6 detik SELAGI modal kebuka, kita juga refresh
+// begitu tab balik fokus atau internet baru nyambung lagi -- ini yg
+// nutup celah "buka panel, pindah tab lama, balik lagi -> data masih
+// keliatan basi sampai nunggu interval berikutnya". Guard `statsModal`
+// harus kebuka dulu supaya tidak diam-diam fetch data yg toh tidak
+// sedang dilihat siapapun.
+document.addEventListener('visibilitychange', ()=>{
+  if(!document.hidden && el('statsModal').style.display !== 'none'){
+    loadStatsIntoModal({ silent:true });
+  }
+});
+window.addEventListener('online', ()=>{
+  if(el('statsModal').style.display !== 'none'){
+    loadStatsIntoModal({ silent:true });
+  }
+});
 
 function openStatsModal(){
   el('statsModal').style.display = 'flex';
@@ -3072,10 +3117,75 @@ window.addEventListener('afterprint', ()=>{
 });
 
 // ---------- Register service worker (PWA) ----------
+// updateViaCache:'none' memastikan file sw.js ITU SENDIRI tidak pernah
+// dibaca dari HTTP cache browser saat dicek ulang -- ini celah klasik yg
+// sering kelewat: walau logic di dalam sw.js sudah benar (network-first,
+// stale-while-revalidate, dsb), kalau file sw.js-nya sendiri kebaca dari
+// cache lama, browser gak akan pernah tahu ada versi sw.js yg lebih baru
+// utk diinstall sama sekali.
+let swUpdateToastShown = false;
+// Dipakai buat bedain "SW pertama kali aktif di kunjungan awal" (bukan
+// update, jangan tampilkan toast) vs "SW lama diganti SW baru pas user
+// lagi buka app" (ini baru update sungguhan). navigator.serviceWorker
+// .controller bernilai null kalau ini kunjungan pertama tab (belum ada
+// SW yg pernah mengendalikan halaman ini sebelumnya).
+const hadControllerOnLoad = !!(navigator.serviceWorker && navigator.serviceWorker.controller);
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('sw.js').catch(()=>{});
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+      .then(reg=>{
+        // Cek ada-tidaknya versi baru tiap kali tab kembali aktif -- bukan
+        // cuma mengandalkan interval browser bawaan yg bisa jarang & tidak
+        // konsisten antar browser. Ini yg bikin update kerasa cepat
+        // terdeteksi begitu user balik ke tab ini, tanpa perlu hard-reload.
+        document.addEventListener('visibilitychange', ()=>{
+          if(!document.hidden) reg.update().catch(()=>{});
+        });
+        // Jaga-jaga juga dicek berkala selagi tab dibiarkan terbuka lama
+        // (mis. dipakai di kasir/loket yg jarang di-refresh manual).
+        setInterval(()=> reg.update().catch(()=>{}), 10*60*1000); // tiap 10 menit
+      })
+      .catch(()=>{});
+
+    // Sinyal utama dari sw.js begitu versi baru selesai di-activate (lihat
+    // clients.matchAll(...).postMessage(...) di activate handler sw.js).
+    // Guard hadControllerOnLoad sama spt di controllerchange -- mencegah
+    // toast salah muncul di kunjungan pertama.
+    navigator.serviceWorker.addEventListener('message', (event)=>{
+      if(event.data && event.data.type === 'SW_UPDATED' && hadControllerOnLoad) showSwUpdateToast();
+    });
   });
+
+  // Fallback kedua yg lebih andal lintas-browser: begitu controller (SW
+  // yg sedang mengendalikan tab ini) berganti krn ada versi baru yg
+  // skipWaiting+claim, event ini SELALU terpicu -- jadi tetap kedeteksi
+  // walau utk alasan apapun pesan postMessage di atas kelewat/gagal.
+  // Guard hadControllerOnLoad supaya toast TIDAK muncul salah di
+  // kunjungan pertama (saat itu juga terjadi "controllerchange" dari
+  // null -> SW pertama, tapi itu instalasi awal, bukan update).
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    if(hadControllerOnLoad) showSwUpdateToast();
+  });
+}
+
+// Tawarkan reload ke user begitu versi app yg lebih baru sudah siap --
+// SENGAJA TIDAK auto-reload paksa tanpa izin, supaya tidak tiba-tiba
+// memutus proses yg lagi jalan (mis. user lagi di tengah crop foto atau
+// isi nomor HP banyak KTP sekaligus). Toast ini persisten (gak auto-hide)
+// & ada tombol aksi jelas, bukan cuma notifikasi lewat sekilas.
+function showSwUpdateToast(){
+  if(swUpdateToastShown) return; // jangan spam toast yg sama berkali-kali
+  swUpdateToastShown = true;
+  toastPersistent(
+    'Versi baru aplikasi sudah siap. ' +
+    '<button id="btnReloadNewVersion" class="toast-action-btn">Muat ulang sekarang</button> ' +
+    '<button id="btnDismissNewVersion" class="toast-dismiss-btn" aria-label="Tutup">&times;</button>',
+    'info'
+  );
+  const reloadBtn = document.getElementById('btnReloadNewVersion');
+  if(reloadBtn) reloadBtn.addEventListener('click', ()=> window.location.reload());
+  const dismissBtn = document.getElementById('btnDismissNewVersion');
+  if(dismissBtn) dismissBtn.addEventListener('click', ()=> toastEl.classList.remove('show','toast-persistent'));
 }
 
 initPaperSelect();
