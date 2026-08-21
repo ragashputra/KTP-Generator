@@ -513,6 +513,7 @@ function renderGrid(){
     div.innerHTML = `
       <div class="thumb ${thumbClass}" data-act="zoom" data-id="${c.id}">
         <span class="status ${statusClass}">${statusLabel}</span>
+        ${c.hasManualAdjust ? `<span class="status adjusted-badge" title="Kecerahan/kontras/dll sudah disesuaikan manual"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>Disesuaikan</span>` : ''}
         <div class="frame">
           ${thumbInner}
         </div>
@@ -625,6 +626,24 @@ function makeThumbDataURL(source, srcW, srcH){
   return tc.toDataURL('image/jpeg', 0.82);
 }
 
+// Regenerasi thumbnail grid SEKALIGUS menerapkan card.adjust kalau ada
+// & non-netral -- dipakai di SEMUA alur yg mengganti croppedDataURL
+// (crop ulang, HD-kan, batalkan HD, putar) supaya badge "Disesuaikan" &
+// tampilan kartu di daftar utama TETAP konsisten dgn hasil cetak
+// sekalipun user crop/HD-kan ulang setelah pernah menyesuaikan warna.
+// Sebelumnya keempat alur itu langsung makeThumbDataURL() dari canvas
+// mentah -- efeknya penyesuaian yg sudah tersimpan "hilang" dari
+// TAMPILAN grid (walau tetap kepakai saat cetak, krn card.adjust
+// sengaja tidak direset), bikin preview kartu tidak WYSIWYG lagi.
+function refreshCardThumb(card, canvas){
+  if(card.adjust && !isAdjustNeutral(card.adjust)){
+    const adjustedCv = applyManualAdjust(canvas, card.adjust);
+    card.thumbDataURL = makeThumbDataURL(adjustedCv, adjustedCv.width, adjustedCv.height);
+  }else{
+    card.thumbDataURL = makeThumbDataURL(canvas, canvas.width, canvas.height);
+  }
+}
+
 // Duplikat KTP yang sudah di-crop — berguna kalau user cuma punya 1 KTP
 // tapi mau cetak beberapa salinan sekaligus dalam 1 lembar (misal layout
 // 2x2 muat 4 slot, tapi cuma ada 1 KTP: duplikat 3x biar 1 lembar penuh,
@@ -667,7 +686,7 @@ function rotateCardResult(id){
     ctx.rotate(90*Math.PI/180);
     ctx.drawImage(img, -img.width/2, -img.height/2);
     card.croppedDataURL = canvas.toDataURL('image/jpeg', 0.95);
-    card.thumbDataURL = makeThumbDataURL(canvas, canvas.width, canvas.height);
+    refreshCardThumb(card, canvas);
     renderGrid();
     toast('Foto diputar 90°');
   };
@@ -675,27 +694,54 @@ function rotateCardResult(id){
 }
 
 // ---------- Zoom preview modal (tap KTP utk lihat hasil crop besar) ----------
+// PENTING (WYSIWYG): sebelumnya modal ini pasang card.croppedDataURL
+// APA ADANYA ke <img>, jadi kalau user sudah pernah "Sesuaikan Foto"
+// (kecerahan/kontras/dll), preview besar di sini TIDAK ikut berubah --
+// padahal grid thumbnail & hasil cetak sudah ikut (lihat refreshCardThumb).
+// Sekarang kalau card.adjust non-netral, gambar diproses ULANG lewat
+// applyManualAdjust() (rumus sama persis dgn hasil cetak final) sebelum
+// ditampilkan, supaya preview zoom ini benar2 mencerminkan versi yg akan
+// dicetak -- bukan cuma hasil crop/HD mentah sebelum disesuaikan.
 function openZoomModal(id){
   const card = cards.find(c=>c.id===id);
   if(!card) return;
-  const src = card.croppedDataURL || card.rawImg.src;
+  const rawSrc = card.croppedDataURL || card.rawImg.src;
   const plainImg = el('zoomImage');
   const rotWrap = el('zoomRotWrap');
   const rotImg = el('zoomImageRot');
-  // Hasil crop tersimpan landscape (utk layout cetak) — tampilkan lewat
-  // wrapper rot90 supaya berdiri tegak seperti KTP fisik. Foto raw
-  // (belum crop) ditampilkan apa adanya.
-  if(card.croppedDataURL){
-    rotImg.src = src;
-    rotWrap.style.display = 'block';
-    plainImg.style.display = 'none';
+  const showAdjusted = card.croppedDataURL && card.adjust && !isAdjustNeutral(card.adjust);
+
+  const applySrc = (finalSrc)=>{
+    // Hasil crop tersimpan landscape (utk layout cetak) — tampilkan lewat
+    // wrapper rot90 supaya berdiri tegak seperti KTP fisik. Foto raw
+    // (belum crop) ditampilkan apa adanya.
+    if(card.croppedDataURL){
+      rotImg.src = finalSrc;
+      rotWrap.style.display = 'block';
+      plainImg.style.display = 'none';
+    } else {
+      plainImg.src = finalSrc;
+      plainImg.style.display = 'block';
+      rotWrap.style.display = 'none';
+    }
+  };
+
+  if(showAdjusted){
+    const img = new Image();
+    img.onload = ()=>{
+      const cv = applyManualAdjust(img, card.adjust);
+      applySrc(cv.toDataURL('image/jpeg', 0.95));
+    };
+    img.onerror = ()=> applySrc(rawSrc); // jaga-jaga -- lebih baik tampil apa adanya drpd modal kosong
+    img.src = rawSrc;
   } else {
-    plainImg.src = src;
-    plainImg.style.display = 'block';
-    rotWrap.style.display = 'none';
+    applySrc(rawSrc);
   }
+
   el('zoomStatusHint').textContent = card.croppedDataURL
-    ? (card.enhanced ? zoomEnhanceHint(card) : 'Tampilan penuh sesuai hasil crop saat ini.')
+    ? (showAdjusted
+        ? (card.enhanced ? zoomEnhanceHint(card) + ' Warna sudah disesuaikan manual.' : 'Tampilan penuh — warna sudah disesuaikan manual (kecerahan/kontras/dll).')
+        : (card.enhanced ? zoomEnhanceHint(card) : 'Tampilan penuh sesuai hasil crop saat ini.'))
     : 'Foto ini belum di-crop — tampilan asli sebelum diproses.';
   el('zoomModal').style.display = 'flex';
 }
@@ -2345,7 +2391,7 @@ function saveCrop(){
   }
 
   card.croppedDataURL = resultCanvas.toDataURL('image/jpeg', 0.95);
-  card.thumbDataURL = makeThumbDataURL(resultCanvas, resultCanvas.width, resultCanvas.height);
+  refreshCardThumb(card, resultCanvas);
   card.status = 'cropped';
   card.enhanced = false;
   // Crop baru berarti sumber gambar berubah — buang jejak enhance/original
@@ -2429,7 +2475,7 @@ function revertEnhance(id){
     const cv = document.createElement('canvas');
     cv.width = img.width; cv.height = img.height;
     cv.getContext('2d').drawImage(img,0,0);
-    card.thumbDataURL = makeThumbDataURL(cv, cv.width, cv.height);
+    refreshCardThumb(card, cv);
     renderGrid();
   };
   img.src = card.croppedDataURL;
@@ -2475,7 +2521,7 @@ async function enhanceCard(card, btnEl, mode){
     }
 
     card.croppedDataURL = result.dataURL;
-    card.thumbDataURL = makeThumbDataURL(result.canvas, result.canvas.width, result.canvas.height);
+    refreshCardThumb(card, result.canvas);
     card.status = 'enhanced';
     card.enhanced = true;
     card.enhanceMeta = result.meta || null;
@@ -3074,7 +3120,18 @@ function syncAdjustPreviewModeUI(){
   const badge = el('adjustModeBadge');
   if(!badge) return;
   const willBeBW = adjustPreviewMode === 'bw' || (adjustPreviewMode === 'match' && printMode === 'BW');
-  badge.textContent = willBeBW ? 'Pratinjau Hitam Putih' : 'Mode Warna';
+  // Badge cuma ganti ICON + teks -- background/border pill-nya TETAP sama
+  // (glass gelap netral) di kedua state, biar senada dgn toggle di sebelahnya
+  // (dulu badge ini switch background hitam<->hijau, kesannya nggak nyambung
+  // sama toggle yg selalu netral hitam/putih).
+  const badgeText = el('adjustModeBadgeText');
+  const badgeIcon = el('adjustModeBadgeIcon');
+  if(badgeText) badgeText.textContent = willBeBW ? 'Pratinjau Hitam Putih' : 'Mode Warna';
+  if(badgeIcon){
+    badgeIcon.innerHTML = willBeBW
+      ? '<circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 000 20V2z" fill="currentColor" stroke="none"/>'
+      : '<circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 011.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/>';
+  }
   badge.classList.toggle('bw', willBeBW);
 }
 
@@ -3249,16 +3306,45 @@ function initAdjustModal(){
   if(saveBtn) saveBtn.addEventListener('click', saveAdjustModal);
 }
 
+// Setelah "Terapkan" disimpan, kartu di DAFTAR UTAMA (bukan cuma badge
+// kecil di tombol "Sesuaikan") harus langsung menampilkan hasil edit --
+// sebelumnya thumbnail grid (thumbDataURL) TIDAK PERNAH diregenerasi saat
+// slider disimpan, jadi user harus buka preview-cetak dulu baru kelihatan
+// efeknya, padahal toast bilang "diterapkan". Sekarang thumbnail grid
+// diregenerasi ULANG dari croppedDataURL + applyManualAdjust() -- sumber
+// & rumus PERSIS SAMA dgn jalur render cetak/PDF (lihat catatan WYSIWYG
+// di applyManualAdjust), jadi apa yg tampil di kartu = apa yg akan
+// dicetak, bukan sekadar filter CSS approksimasi yg bisa meleset dari
+// hasil LUT tone-mapping asli.
 function saveAdjustModal(){
   const card = cards.find(c=>c.id===adjustCardId);
   if(!card || !adjustDraft) { closeAdjustModal(); return; }
   card.adjust = { ...adjustDraft };
   card.hasManualAdjust = !isAdjustNeutral(card.adjust);
   closeAdjustModal();
-  renderGrid();
-  toast(card.hasManualAdjust
-    ? 'Penyesuaian foto diterapkan — akan dipakai otomatis saat preview & cetak'
-    : 'Penyesuaian direset — foto memakai hasil crop/HD apa adanya', 4000);
+
+  if(!card.croppedDataURL){ renderGrid(); return; }
+  const img = new Image();
+  img.onload = ()=>{
+    // refreshCardThumb baca card.adjust yg BARU SAJA diset di atas --
+    // kalau netral (habis Reset), otomatis balik ke thumbnail polos;
+    // kalau tidak, thumbnail digenerate dari applyManualAdjust (rumus
+    // sama persis dgn hasil cetak final, bukan pendekatan CSS filter).
+    refreshCardThumb(card, img);
+    renderGrid();
+    toast(card.hasManualAdjust
+      ? 'Penyesuaian foto diterapkan — kartu di daftar & hasil cetak sudah memakai warna baru'
+      : 'Penyesuaian direset — foto memakai hasil crop/HD apa adanya', 4000);
+  };
+  img.onerror = ()=>{
+    // Jaga-jaga kalau decode gagal (jarang terjadi) -- tetap render grid
+    // & kasih tahu apa adanya, jangan diam2 gagal tanpa penjelasan.
+    renderGrid();
+    toast(card.hasManualAdjust
+      ? 'Penyesuaian disimpan, tapi pratinjau kartu gagal diperbarui — akan tetap terpakai saat cetak'
+      : 'Penyesuaian direset — foto memakai hasil crop/HD apa adanya', 4200, 'warn');
+  };
+  img.src = card.croppedDataURL;
 }
 
 function clamp(v){ return v<0?0:(v>255?255:v); }

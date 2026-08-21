@@ -946,6 +946,19 @@
   .status.raw{background:rgba(16,17,20,.85);color:#fff;backdrop-filter:blur(4px);}
   .status.cropped{background:var(--success);color:#fff;}
   .status.enhanced{background:#2563eb;color:#fff;}
+  /* Badge "Disesuaikan" -- nempel di pojok KANAN atas thumbnail (badge
+     status Cropped/HD tetap di kiri) supaya user langsung tahu dari
+     daftar utama kalau kecerahan/kontras/dll kartu ini sudah diedit
+     manual, tanpa harus hover ke tombol "Sesuaikan" dulu. Pakai warna
+     --accent (bukan hijau/biru status lain) biar konsisten & tidak
+     ketuker artinya dgn status crop/HD, senada dgn .icnbtn.adjusted. */
+  .status.adjusted-badge{
+    left:auto;right:9px;
+    display:flex;align-items:center;gap:4px;
+    background:var(--accent);color:#fff;
+    text-transform:none;letter-spacing:.2px;
+  }
+  .status.adjusted-badge svg{width:10px;height:10px;stroke:#fff;flex-shrink:0;}
 
   .ktp-card .body{padding:11px 12px 12px;display:flex;flex-direction:column;gap:8px;flex:1;}
   .ktp-card .actions{display:flex;gap:6px;margin-top:auto;flex-wrap:wrap;}
@@ -1523,16 +1536,26 @@
     position:absolute;top:10px;left:10px;
     display:flex;gap:6px;flex-wrap:wrap;
   }
+  /* Badge & toggle sekarang satu bahasa desain yg sama persis (glass gelap +
+     border tipis putih-transparan) -- sebelumnya badge ini SWITCH background
+     hitam<->hijau tiap ganti mode (hardcode hijau, gak ngikut --accent tema
+     yg dipilih user), sedangkan toggle di sebelahnya SELALU hitam/putih netral.
+     Dua gaya beda dlm 1 baris bikin kesan "nggak nyambung"/asal. Sekarang
+     bedanya cuma di ICON (ikon warna vs ikon lingkaran BW, sama persis dgn
+     ikon toggle "Warna/Hitam Putih" di kartu spesifikasi) -- background &
+     border-nya konsisten utk kedua state, jadi terasa 1 sistem desain. */
   .adjust-badge{
     font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.2px;
     color:#fff;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
-    padding:4px 9px;border-radius:20px;
-    display:flex;align-items:center;gap:5px;
+    border:1px solid rgba(255,255,255,.16);
+    padding:4px 10px;border-radius:20px;
+    display:flex;align-items:center;gap:6px;
   }
-  .adjust-badge.bw{background:rgba(35,134,54,.75);}
+  .adjust-badge svg{width:11px;height:11px;flex-shrink:0;stroke:#fff;}
   .adjust-bw-toggle{
     position:absolute;top:10px;right:10px;
     display:flex;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);
+    border:1px solid rgba(255,255,255,.16);
     border-radius:20px;padding:3px;gap:2px;
   }
   .adjust-bw-toggle button{
@@ -1606,7 +1629,15 @@
     font-family:var(--font-body);font-size:var(--fs-2xs);font-weight:600;color:var(--ink-soft);
     background:var(--surface);border:1.5px solid var(--border);border-radius:20px;
     padding:8px 14px;cursor:pointer;transition:.14s ease;
+    display:inline-flex;align-items:center;gap:6px;
   }
+  /* Icon preset sekarang SVG stroke=currentColor (sama gayanya dgn ikon
+     slider Kecerahan/Kontras di bawah), bukan emoji ☀️ berwarna spt
+     sebelumnya -- emoji-nya nongol beda gaya & beda warna sendiri
+     (kuning) dibanding tombol "Pertajam" di sebelahnya yg pakai glyph
+     monokrom, jadi kesannya nggak satu set. Sekarang semua preset pakai
+     ikon vector minimalis yg konsisten. */
+  .adjust-preset-btn svg{width:13px;height:13px;stroke:currentColor;flex-shrink:0;}
   .adjust-preset-btn:hover{border-color:var(--accent);color:var(--ink);}
   .adjust-preset-btn.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);}
   .adjust-reset-link{
@@ -1931,7 +1962,10 @@
     <div class="adjust-layout">
       <div class="adjust-preview-wrap">
         <div class="adjust-preview-badges">
-          <span class="adjust-badge" id="adjustModeBadge">Mode Warna</span>
+          <span class="adjust-badge" id="adjustModeBadge">
+            <svg id="adjustModeBadgeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="13.5" cy="6.5" r=".5" fill="currentColor"/><circle cx="17.5" cy="10.5" r=".5" fill="currentColor"/><circle cx="8.5" cy="7.5" r=".5" fill="currentColor"/><circle cx="6.5" cy="12.5" r=".5" fill="currentColor"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 011.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+            <span id="adjustModeBadgeText">Mode Warna</span>
+          </span>
         </div>
         <div class="adjust-bw-toggle" id="adjustPreviewToggle">
           <button type="button" data-preview-mode="match" class="active">Sesuai Mode Cetak</button>
@@ -1942,8 +1976,8 @@
 
       <div class="adjust-hint-row">
         <div class="adjust-presets" id="adjustPresets">
-          <button type="button" class="adjust-preset-btn" data-preset="terangkan">☀️ Foto Kurang Cahaya</button>
-          <button type="button" class="adjust-preset-btn" data-preset="kontrasBW">◐ Pertajam utk Cetak H&amp;P</button>
+          <button type="button" class="adjust-preset-btn" data-preset="terangkan"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>Foto Kurang Cahaya</button>
+          <button type="button" class="adjust-preset-btn" data-preset="kontrasBW"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 000 20z" fill="currentColor" stroke="none"/></svg>Pertajam utk Cetak H&amp;P</button>
           <button type="button" class="adjust-preset-btn" data-preset="netral">Netral</button>
         </div>
         <button type="button" class="adjust-reset-link" id="btnAdjustReset">
@@ -1975,7 +2009,7 @@
           </div>
         </div>
         <div class="adjust-slider-row" data-row="highlights">
-          <div class="adjust-slider-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></div>
+          <div class="adjust-slider-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3h6l1.5 4.5H7.5L9 3z"/><path d="M7.5 7.5h9L19 15H5l2.5-7.5z"/><path d="M9.5 15L8 21M14.5 15L16 21"/></svg></div>
           <div class="adjust-slider-main">
             <div class="adjust-slider-label"><b>Highlight</b><span class="adjust-slider-val" id="valHighlights">0</span></div>
             <input type="range" class="adjust-range" id="rngHighlights" min="-100" max="100" step="1" value="0">
