@@ -223,6 +223,29 @@
     box-shadow:var(--header-shadow);
     padding:14px 24px;
     display:flex;align-items:center;justify-content:space-between;
+    overflow:hidden;
+  }
+  /* Motif gelombang halus di dasar header -- dekorasi murni, tidak
+     mengganggu keterbacaan konten di atasnya. Digambar pakai CSS mask
+     dari SVG wave, di-fill var(--accent) dgn opacity sangat rendah,
+     jadi warnanya OTOMATIS ikut berubah kalau user ganti tema warna
+     lewat menu Pengaturan (tidak perlu file/aset terpisah per tema).
+     Diposisikan absolute nempel di dasar header, tidak memengaruhi
+     layout/tinggi header sama sekali. */
+  header.top::after{
+    content:'';
+    position:absolute;
+    left:0;right:0;bottom:0;
+    height:30px;
+    pointer-events:none;
+    background:var(--accent);
+    opacity:.10;
+    -webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 60' preserveAspectRatio='none'%3E%3Cpath d='M0,30 C150,60 350,0 600,25 C850,50 1050,5 1200,30 L1200,60 L0,60 Z'/%3E%3C/svg%3E");
+    mask-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 60' preserveAspectRatio='none'%3E%3Cpath d='M0,30 C150,60 350,0 600,25 C850,50 1050,5 1200,30 L1200,60 L0,60 Z'/%3E%3C/svg%3E");
+    -webkit-mask-size:100% 100%;
+    mask-size:100% 100%;
+    -webkit-mask-repeat:no-repeat;
+    mask-repeat:no-repeat;
   }
   header.top .brand{display:flex;align-items:center;gap:11px;min-width:0;}
   header.top .mark{
