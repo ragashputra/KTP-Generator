@@ -359,6 +359,16 @@ document.body.addEventListener('drop', e=>{
 });
 fileInput.addEventListener('change', e=>{ handleFiles([...e.target.files]); fileInput.value=''; });
 
+// Tombol Upload utama sekarang ada di bottom navbar (label #btnOpenUpload
+// membungkus input #fileInputNav) -- native <label>+<input type=file>
+// sudah otomatis buka file picker saat label diklik/di-tap, jadi tidak
+// perlu listener 'click' tambahan, cukup teruskan hasil pilihannya ke
+// handleFiles() yang sama persis dgn jalur dropzone lama.
+const fileInputNav = el('fileInputNav');
+if(fileInputNav){
+  fileInputNav.addEventListener('change', e=>{ handleFiles([...e.target.files]); fileInputNav.value=''; });
+}
+
 function handleFiles(files){
   if(!files.length) return;
   // Baca file SATU-SATU secara berurutan (bukan paralel) supaya KTP
@@ -445,7 +455,19 @@ function renderGrid(){
   grid.innerHTML = '';
   const visibleCards = cards.filter(c=>c.croppedDataURL);
   empty.style.display = visibleCards.length ? 'none' : 'block';
-  el('headerCount').textContent = visibleCards.length + ' KTP';
+  // Counter "X KTP" di header lama sudah dihapus dari UI -- sekarang cuma
+  // muncul sbg badge angka kecil nempel di tombol Statistik pada bottom
+  // navbar, dan disembunyikan total kalau belum ada KTP sama sekali (biar
+  // navbar tetap bersih saat masih kosong).
+  const navBadge = el('navKtpBadge');
+  if(navBadge){
+    if(visibleCards.length){
+      navBadge.textContent = visibleCards.length > 99 ? '99+' : String(visibleCards.length);
+      navBadge.style.display = 'flex';
+    }else{
+      navBadge.style.display = 'none';
+    }
+  }
   el('listSub').textContent = visibleCards.length ? `${visibleCards.length} KTP dimuat` : 'belum ada data';
   // Tombol "Hapus Semua" cuma relevan kalau ada minimal 1 KTP di daftar
   // (termasuk yang masih raw/belum di-crop, bukan cuma visibleCards, biar
@@ -3188,8 +3210,108 @@ function showSwUpdateToast(){
   if(dismissBtn) dismissBtn.addEventListener('click', ()=> toastEl.classList.remove('show','toast-persistent'));
 }
 
+// =========================================================
+// PENGATURAN — mode gelap/terang & warna tema aksen
+// =========================================================
+// Preferensi disimpan di localStorage (persist per-perangkat, murni
+// preferensi tampilan lokal, TIDAK dikirim ke backend statistik mana
+// pun). Diterapkan lewat atribut data-mode/data-theme di <html> --
+// seluruh warna sudah didefinisikan sbg CSS variable di index.html,
+// jadi JS di sini cuma toggle atribut + simpan pilihan, tidak perlu
+// utak-atik style tiap elemen satu-satu.
+//
+// CATATAN: ada juga inline <script> kecil di paling atas <head>
+// index.html yang membaca localStorage & langsung set atribut ini
+// SEBELUM body dirender -- itu murni mencegah "flash" warna default
+// sesaat sebelum app.js ini sempat jalan. Logic di sini (initTheme
+// Settings) mengambil alih untuk sisa interaksi selama sesi berjalan
+// (klik ganti tema/mode, sinkronisasi UI toggle, dst).
+const THEME_STORAGE_KEY = 'ktp_theme';
+const MODE_STORAGE_KEY  = 'ktp_mode';
+const VALID_THEMES = ['green','blue','purple','orange','rose','teal'];
+
+function getSavedTheme(){
+  try{
+    const t = localStorage.getItem(THEME_STORAGE_KEY);
+    return VALID_THEMES.includes(t) ? t : 'green';
+  }catch(e){ return 'green'; }
+}
+function getSavedMode(){
+  try{
+    return localStorage.getItem(MODE_STORAGE_KEY) === 'light' ? 'light' : 'dark';
+  }catch(e){ return 'dark'; }
+}
+
+function applyTheme(theme){
+  if(theme === 'green'){
+    document.documentElement.removeAttribute('data-theme');
+  }else{
+    document.documentElement.setAttribute('data-theme', theme);
+  }
+  try{ localStorage.setItem(THEME_STORAGE_KEY, theme); }catch(e){}
+  syncSettingsUI();
+}
+
+function applyMode(mode){
+  if(mode === 'light'){
+    document.documentElement.setAttribute('data-mode','light');
+  }else{
+    document.documentElement.removeAttribute('data-mode');
+  }
+  try{ localStorage.setItem(MODE_STORAGE_KEY, mode); }catch(e){}
+  // Warnai status bar/browser chrome (mobile) supaya menyatu dgn tema,
+  // bukan cuma konten halamannya saja yg berubah warna.
+  const metaTheme = document.querySelector('meta[name="theme-color"]');
+  if(metaTheme) metaTheme.setAttribute('content', mode === 'light' ? '#f6f8fa' : '#0d1117');
+  syncSettingsUI();
+}
+
+// Sinkronkan tampilan tombol pilihan (swatch aktif, toggle mode aktif)
+// dgn state saat ini -- dipanggil tiap kali tema/mode berubah ATAU
+// saat modal Pengaturan dibuka, supaya selalu akurat.
+function syncSettingsUI(){
+  const currentTheme = getSavedTheme();
+  const currentMode = getSavedMode();
+
+  document.querySelectorAll('.theme-swatch').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.themeValue === currentTheme);
+  });
+  const darkOpt = el('modeOptDark');
+  const lightOpt = el('modeOptLight');
+  if(darkOpt) darkOpt.classList.toggle('active', currentMode === 'dark');
+  if(lightOpt) lightOpt.classList.toggle('active', currentMode === 'light');
+}
+
+function openSettingsModal(){
+  syncSettingsUI();
+  el('settingsModal').style.display = 'flex';
+}
+function closeSettingsModal(){
+  el('settingsModal').style.display = 'none';
+}
+
+function initThemeSettings(){
+  // Terapkan preferensi tersimpan (redundant dgn inline script di head,
+  // tapi murah & memastikan konsisten kalau localStorage sempat berubah
+  // dari tab lain sejak halaman pertama dimuat).
+  applyTheme(getSavedTheme());
+  applyMode(getSavedMode());
+
+  document.querySelectorAll('.theme-swatch').forEach(btn=>{
+    btn.addEventListener('click', ()=> applyTheme(btn.dataset.themeValue));
+  });
+  const darkOpt = el('modeOptDark');
+  const lightOpt = el('modeOptLight');
+  if(darkOpt) darkOpt.addEventListener('click', ()=> applyMode('dark'));
+  if(lightOpt) lightOpt.addEventListener('click', ()=> applyMode('light'));
+
+  const btnOpen = el('btnOpenSettings');
+  if(btnOpen) btnOpen.addEventListener('click', openSettingsModal);
+}
+
 initPaperSelect();
 initLayoutModeSelect();
 initCardSizeInputs();
 initColorModeToggle();
+initThemeSettings();
 renderGrid();
