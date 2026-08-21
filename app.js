@@ -2,7 +2,15 @@
    Cetak KTP Generator — CDN Internal Tools
    - Auto-detect & crop tepi KTP dari foto (deteksi kontur +
      perspective unwarp, bukan cuma bounding-box)
-   - Enhance/HD-kan foto buram (sharpen + upscale + contrast, on-device)
+   - Enhance/HD-kan foto buram: SMART & ADAPTIF (on-device) — otomatis
+     mendeteksi tingkat blur/noise/kecerahan foto lalu menyesuaikan
+     kekuatan sharpen, radius unsharp-mask, noise-reduction & upscale
+     sendiri per foto (bukan angka filter tetap utk semua foto). Ada
+     juga opsi "AI Enhance" (cloud, opsional) yg mengirim foto ke model
+     AI super-resolution eksternal utk hasil maksimal di foto sangat
+     buram, dengan fallback otomatis ke enhance lokal kalau gagal/
+     offline. Non-destruktif — original selalu tersimpan, bisa
+     dibatalkan kapan saja. Lihat blok "ENHANCE / HD" di bawah.
    - Rotasi manual (putar kiri/kanan 90°) sebelum crop — mirip Windows
      Photo — supaya user bisa luruskan orientasi foto sendiri
    - Pilihan ukuran kertas (F4 default, A4, Letter, Legal, Folio)
@@ -348,7 +356,8 @@ function loadFilesSequentially(files, idx, newIds){
     img.onload = ()=>{
       const id = 'k'+(idCounter++);
       cards.push({
-        id, rawImg: img, croppedDataURL: null, enhanced:false, rotation:0,
+        id, rawImg: img, croppedDataURL: null, originalDataURL: null,
+        enhanced:false, enhanceMeta:null, rotation:0,
         phone:'', status:'raw'
       });
       newIds.push(id);
@@ -466,10 +475,20 @@ function renderGrid(){
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 004 14.5v0A5.5 5.5 0 009.5 20H13"/></svg>
             <span>Putar</span>
           </button>
-          <button class="icnbtn" title="HD-kan foto buram" data-act="enhance" data-id="${c.id}" ${!c.croppedDataURL ? 'disabled':''}>
+          <button class="icnbtn" title="${c.enhanced ? 'Perjelas ulang (analisis ulang otomatis)' : 'HD-kan foto buram — deteksi otomatis tingkat blur'}" data-act="enhance" data-id="${c.id}" ${!c.croppedDataURL ? 'disabled':''}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
             <span>HD-kan</span>
           </button>
+          ${AI_ENHANCE_ENABLED ? `
+          <button class="icnbtn ai" title="AI Enhance — upscaling pakai model AI (cloud), hasil maksimal utk foto sangat buram" data-act="enhance-ai" data-id="${c.id}" ${!c.croppedDataURL ? 'disabled':''}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z"/></svg>
+            <span>AI Enhance</span>
+          </button>` : ''}
+          ${c.enhanced && c.originalDataURL ? `
+          <button class="icnbtn" title="Kembalikan ke foto sebelum HD-kan" data-act="revert-enhance" data-id="${c.id}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            <span>Batalkan HD</span>
+          </button>` : ''}
           <button class="icnbtn danger" title="Hapus" data-act="delete" data-id="${c.id}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z"/></svg>
             <span>Hapus</span>
@@ -495,6 +514,8 @@ function renderGrid(){
       if(act==='duplicate') duplicateCard(id);
       if(act==='rotate') rotateCardResult(id);
       if(act==='enhance') runEnhance(id, b);
+      if(act==='enhance-ai') runEnhanceAI(id, b);
+      if(act==='revert-enhance') revertEnhance(id);
       if(act==='delete'){ cards = cards.filter(c=>c.id!==id); renderGrid(); }
     });
   });
@@ -606,12 +627,25 @@ function openZoomModal(id){
     rotWrap.style.display = 'none';
   }
   el('zoomStatusHint').textContent = card.croppedDataURL
-    ? (card.enhanced ? 'Tampilan penuh — foto ini sudah diperjelas (HD).' : 'Tampilan penuh sesuai hasil crop saat ini.')
+    ? (card.enhanced ? zoomEnhanceHint(card) : 'Tampilan penuh sesuai hasil crop saat ini.')
     : 'Foto ini belum di-crop — tampilan asli sebelum diproses.';
   el('zoomModal').style.display = 'flex';
 }
 function closeZoomModal(){
   el('zoomModal').style.display = 'none';
+}
+
+// Ringkasan hasil enhance yg ditampilkan di modal zoom, supaya user
+// tahu mesin apa yang dipakai (AI cloud vs on-device) & seberapa buram
+// foto aslinya terdeteksi — sekadar transparansi, bukan wajib dibaca.
+function zoomEnhanceHint(card){
+  const meta = card.enhanceMeta;
+  if(!meta) return 'Tampilan penuh — foto ini sudah diperjelas (HD).';
+  if(meta.engine === 'ai-cloud'){
+    return 'Tampilan penuh — foto ini sudah diperjelas dengan AI Enhance (cloud).';
+  }
+  const level = meta.blurLevel || 'tidak diketahui';
+  return `Tampilan penuh — foto ini sudah diperjelas (HD) secara otomatis, terdeteksi tingkat blur: ${level}.`;
 }
 
 // ---------- Modal Statistik Penggunaan ----------
@@ -2228,49 +2262,278 @@ function saveCrop(){
   card.thumbDataURL = makeThumbDataURL(resultCanvas, resultCanvas.width, resultCanvas.height);
   card.status = 'cropped';
   card.enhanced = false;
+  // Crop baru berarti sumber gambar berubah — buang jejak enhance/original
+  // lama supaya enhance berikutnya diproses dari hasil crop TERBARU ini,
+  // bukan dari crop sebelumnya yang sudah tidak relevan.
+  card.originalDataURL = null;
+  card.enhanceMeta = null;
   closeCropModal();
   renderGrid();
   toast('Crop tersimpan — tepi KTP sudah diluruskan otomatis');
 }
 
 // =========================================================
-// ENHANCE / HD (on-device): unsharp mask + adaptive contrast +
-// high-quality 2x upscale (bicubic-ish via multi-pass canvas
-// smoothing). Ini memperjelas foto buram tanpa mengganti data asli
-// KTP — murni pertajam & upscale, tidak menghasilkan konten baru.
+// ENHANCE / HD — SMART, NON-DESTRUKTIF, DGN OPSI AI CLOUD
 // =========================================================
+// Ringkasan alur baru (v47):
+//
+// 1. NON-DESTRUKTIF: original hasil crop disimpan terpisah di
+//    card.originalDataURL begitu pertama kali di-enhance. Enhance boleh
+//    diulang berkali-kali (mis. user ganti mode) tanpa progresif merusak
+//    gambar, karena selalu diproses ULANG dari original, bukan menumpuk
+//    filter di atas hasil enhance sebelumnya (bug lama v46: enhance 2x
+//    = sharpen dobel = artefak/halo makin parah). Ada juga tombol utk
+//    kembalikan ke foto asli kapan saja.
+//
+// 2. SMART/ADAPTIF (on-device, default, tanpa internet): sebelum
+//    memproses, gambar dianalisis dulu (analyzeImageQuality) utk
+//    mengukur seberapa buram & seberapa noisy fotonya. Kekuatan
+//    sharpening, radius unsharp-mask, dan besar noise-reduction
+//    MENYESUAIKAN otomatis dari hasil analisis itu — foto yang sudah
+//    cukup tajam tidak di-oversharpen (mencegah halo/ringing), foto yang
+//    sangat buram dapat sharpening lebih agresif + upscale lebih tinggi.
+//    Ditambah 1 pass noise-reduction (median-ish blur) SEBELUM sharpen
+//    supaya grain/noise kamera HP tidak ikut dipertajam.
+//
+// 3. AI ENHANCE (cloud, opsional): kalau AI_ENHANCE_API_BASE di bawah
+//    sudah diisi endpoint super-resolution (mis. deployment sendiri yang
+//    membungkus model Real-ESRGAN/GFPGAN, lewat Replicate/HuggingFace
+//    Space/Cloud Run), tombol "AI Enhance" akan mengirim foto ke sana utk
+//    di-upscale pakai model AI sungguhan (bukan cuma filter matematis),
+//    jauh lebih baik utk foto yang SANGAT buram/pecah. Kalau endpoint
+//    belum diisi, gagal, timeout, atau user offline — otomatis (graceful)
+//    fallback ke enhance lokal supaya user tetap dapat hasil yang lebih
+//    baik, bukan error mentah. Sama seperti pola STATS_API_BASE di atas.
+const AI_ENHANCE_API_BASE = ''; // GANTI dgn URL endpoint AI upscaling kamu sendiri (kosongkan utk nonaktifkan & selalu pakai enhance lokal)
+const AI_ENHANCE_TIMEOUT_MS = 20000;
+// Tombol "AI Enhance" HANYA muncul di UI kalau endpoint di atas sudah
+// diisi — mencegah tombol nganggur/selalu-gagal bagi user yg belum
+// setup cloud enhance. Enhance lokal (tombol "HD-kan") tetap selalu ada.
+const AI_ENHANCE_ENABLED = !!(AI_ENHANCE_API_BASE && !AI_ENHANCE_API_BASE.startsWith('GANTI_'));
 
 function runEnhance(id, btnEl){
   const card = cards.find(c=>c.id===id);
   if(!card || !card.croppedDataURL) return;
-
-  const origSvg = btnEl.innerHTML;
-  btnEl.disabled = true;
-  btnEl.innerHTML = `<svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-9-9"/></svg>`;
-
-  setTimeout(()=>{ // allow UI to paint spinner before heavy sync work
-    const img = new Image();
-    img.onload = ()=>{
-      const enhanced = enhanceImage(img);
-      card.croppedDataURL = enhanced.dataURL;
-      card.thumbDataURL = makeThumbDataURL(enhanced.canvas, enhanced.canvas.width, enhanced.canvas.height);
-      card.status = 'enhanced';
-      card.enhanced = true;
-      btnEl.disabled = false;
-      btnEl.innerHTML = origSvg;
-      renderGrid();
-      toast('Foto berhasil diperjelas — kualitas HD siap dicetak');
-    };
-    img.src = card.croppedDataURL;
-  }, 30);
+  enhanceCard(card, btnEl, 'auto');
 }
 
-function enhanceImage(img){
-  const scaleFactor = 1.6; // upscale for extra sharpness headroom, then we keep native print size
+// Enhance pakai AI cloud secara eksplisit (dipanggil dari tombol "AI
+// Enhance" terpisah kalau AI_ENHANCE_API_BASE terisi).
+function runEnhanceAI(id, btnEl){
+  const card = cards.find(c=>c.id===id);
+  if(!card || !card.croppedDataURL) return;
+  enhanceCard(card, btnEl, 'ai');
+}
+
+// Kembalikan foto ke hasil crop ASLI (sebelum enhance apapun).
+function revertEnhance(id){
+  const card = cards.find(c=>c.id===id);
+  if(!card || !card.originalDataURL) return;
+  card.croppedDataURL = card.originalDataURL;
+  card.status = 'cropped';
+  card.enhanced = false;
+  card.enhanceMeta = null;
+  const img = new Image();
+  img.onload = ()=>{
+    const cv = document.createElement('canvas');
+    cv.width = img.width; cv.height = img.height;
+    cv.getContext('2d').drawImage(img,0,0);
+    card.thumbDataURL = makeThumbDataURL(cv, cv.width, cv.height);
+    renderGrid();
+  };
+  img.src = card.croppedDataURL;
+  toast('Dikembalikan ke foto hasil crop semula (sebelum HD)');
+}
+
+async function enhanceCard(card, btnEl, mode){
+  // Selalu proses ULANG dari original (kalau ada), supaya enhance tidak
+  // menumpuk di atas hasil enhance sebelumnya — mencegah gambar makin
+  // rusak/oversharpen tiap kali tombol ditekan berkali-kali.
+  const sourceDataURL = card.originalDataURL || card.croppedDataURL;
+  if(!card.originalDataURL) card.originalDataURL = card.croppedDataURL;
+
+  const origSvg = btnEl ? btnEl.innerHTML : null;
+  if(btnEl){
+    btnEl.disabled = true;
+    btnEl.innerHTML = `<svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-9-9"/></svg>`;
+  }
+  setEnhanceProgress(card.id, mode==='ai' ? 'Mengirim ke AI Enhance…' : 'Menganalisis ketajaman foto…');
+
+  try{
+    let result = null;
+    let usedAI = false;
+
+    if(mode==='ai' && AI_ENHANCE_API_BASE && !AI_ENHANCE_API_BASE.startsWith('GANTI_')){
+      try{
+        result = await enhanceImageAI(sourceDataURL, (msg)=>setEnhanceProgress(card.id, msg));
+        usedAI = true;
+      }catch(err){
+        console.warn('[AI Enhance] Gagal, fallback ke enhance lokal:', err);
+        toast('AI Enhance tidak tersedia saat ini — memakai enhance otomatis on-device', 3600, 'warn');
+        setEnhanceProgress(card.id, 'Beralih ke enhance otomatis on-device…');
+      }
+    }
+
+    if(!result){
+      // Kasih waktu 1 frame supaya spinner sempat kepaint sebelum kerja
+      // sinkron berat (analisis + filter) mulai, biar UI tidak ngefreeze
+      // tanpa indikasi.
+      await nextFrame();
+      const img = await loadImage(sourceDataURL);
+      result = enhanceImageSmart(img);
+    }
+
+    card.croppedDataURL = result.dataURL;
+    card.thumbDataURL = makeThumbDataURL(result.canvas, result.canvas.width, result.canvas.height);
+    card.status = 'enhanced';
+    card.enhanced = true;
+    card.enhanceMeta = result.meta || null;
+
+    if(btnEl){ btnEl.disabled = false; btnEl.innerHTML = origSvg; }
+    clearEnhanceProgress(card.id);
+    renderGrid();
+
+    if(usedAI){
+      toast('Foto berhasil diperjelas dengan AI Enhance — kualitas HD maksimal');
+    } else if(result.meta && result.meta.blurLevel === 'sangat buram'){
+      toast('Foto sangat buram — sudah dipertajam maksimal, tapi hasil terbaik tetap dari foto ulang dgn cahaya cukup', 5200, 'warn');
+    } else {
+      toast('Foto berhasil diperjelas — kualitas HD siap dicetak');
+    }
+  }catch(err){
+    console.error('[Enhance] Gagal total:', err);
+    if(btnEl){ btnEl.disabled = false; btnEl.innerHTML = origSvg; }
+    clearEnhanceProgress(card.id);
+    toast('Gagal memproses HD — coba lagi, atau pakai foto dgn resolusi lebih kecil', 4200, 'warn');
+  }
+}
+
+function loadImage(src){
+  return new Promise((resolve,reject)=>{
+    const img = new Image();
+    img.onload = ()=>resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+function nextFrame(){
+  return new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+}
+
+// Progress kecil di bawah tombol HD-kan/AI Enhance, dibersihkan otomatis
+// setelah selesai. Dicari lewat card wrapper (bukan hanya tombol
+// "enhance") supaya progress tetap muncul walau yg dipicu tombol AI
+// Enhance.
+function findCardBody(id){
+  const anyBtn = document.querySelector(`.ktp-card [data-id="${id}"]`);
+  return anyBtn ? anyBtn.closest('.body') : null;
+}
+function setEnhanceProgress(id, msg){
+  const holder = findCardBody(id);
+  if(!holder) return;
+  let bar = holder.querySelector('.enhance-progress');
+  if(!bar){
+    bar = document.createElement('div');
+    bar.className = 'enhance-progress';
+    holder.appendChild(bar);
+  }
+  bar.textContent = msg;
+}
+function clearEnhanceProgress(id){
+  const holder = findCardBody(id);
+  const bar = holder && holder.querySelector('.enhance-progress');
+  if(bar) bar.remove();
+}
+
+// ---------------------------------------------------------
+// Analisis kualitas gambar: estimasi level blur & noise dari gradien
+// & varians lokal (Laplacian variance — metode standar utk deteksi
+// blur), plus histogram kecerahan utk deteksi foto gelap/washed-out.
+// Dijalankan di resolusi kecil (downscale) supaya cepat, hasilnya lalu
+// dipetakan ke parameter enhance yang sebenarnya.
+// ---------------------------------------------------------
+function analyzeImageQuality(img){
+  const sampleW = Math.min(320, img.width);
+  const sampleH = Math.round(img.height * (sampleW/img.width));
+  const cv = document.createElement('canvas');
+  cv.width = sampleW; cv.height = sampleH;
+  const cx = cv.getContext('2d');
+  cx.drawImage(img, 0, 0, sampleW, sampleH);
+  const { data } = cx.getImageData(0,0,sampleW,sampleH);
+
+  // grayscale
+  const gray = new Float32Array(sampleW*sampleH);
+  let brightnessSum = 0;
+  for(let i=0, p=0; i<data.length; i+=4, p++){
+    const g = 0.299*data[i] + 0.587*data[i+1] + 0.114*data[i+2];
+    gray[p] = g;
+    brightnessSum += g;
+  }
+  const avgBrightness = brightnessSum / gray.length; // 0-255
+
+  // Laplacian (edge/detail) variance — indikator ketajaman standar:
+  // makin rendah variansnya, makin buram fotonya.
+  let sum=0, sumSq=0, count=0;
+  for(let y=1; y<sampleH-1; y++){
+    for(let x=1; x<sampleW-1; x++){
+      const idx = y*sampleW+x;
+      const lap = -4*gray[idx] + gray[idx-1] + gray[idx+1] + gray[idx-sampleW] + gray[idx+sampleW];
+      sum += lap; sumSq += lap*lap; count++;
+    }
+  }
+  const mean = sum/count;
+  const variance = (sumSq/count) - mean*mean;
+
+  // Noise estimate kasar: variansi di area yang SECARA LOKAL relatif flat
+  // (gradien kecil) — kalau area "flat" masih bervariasi tinggi, kemungkinan
+  // besar itu grain/noise sensor, bukan detail asli.
+  let noiseSum=0, noiseCount=0;
+  for(let y=1; y<sampleH-1; y+=2){
+    for(let x=1; x<sampleW-1; x+=2){
+      const idx = y*sampleW+x;
+      const gx = gray[idx+1]-gray[idx-1];
+      const gy = gray[idx+sampleW]-gray[idx-sampleW];
+      const grad = Math.sqrt(gx*gx+gy*gy);
+      if(grad < 12){ // area relatif datar
+        noiseSum += grad; noiseCount++;
+      }
+    }
+  }
+  const noiseScore = noiseCount ? noiseSum/noiseCount : 0; // makin tinggi = makin noisy
+
+  // Klasifikasi level blur dari Laplacian variance (threshold dikalibrasi
+  // utk foto dokumen/kartu hasil kamera HP, bukan foto umum).
+  let blurLevel;
+  if(variance > 350) blurLevel = 'tajam';
+  else if(variance > 140) blurLevel = 'cukup buram';
+  else blurLevel = 'sangat buram';
+
+  return { variance, avgBrightness, noiseScore, blurLevel };
+}
+
+// ---------------------------------------------------------
+// Enhance lokal "smart": upscale + noise-reduction + unsharp-mask
+// adaptif + contrast/brightness adaptif, murni pertajam & rapikan
+// gambar yang sudah ada (tidak menghasilkan konten/detail baru yg tidak
+// benar-benar ada di foto — beda dgn AI generative upscaling).
+// ---------------------------------------------------------
+function enhanceImageSmart(img){
+  const quality = analyzeImageQuality(img);
+
+  // Upscale lebih tinggi utk foto yang lebih buram (kasih lebih banyak
+  // "ruang" piksel utk sharpening bekerja tanpa pecah), dibatasi supaya
+  // tidak membengkak berlebihan di foto yang aslinya sudah besar.
+  const megapixels = (img.width*img.height)/1e6;
+  let scaleFactor = quality.blurLevel==='sangat buram' ? 1.9
+                   : quality.blurLevel==='cukup buram' ? 1.6
+                   : 1.3;
+  if(megapixels > 4) scaleFactor = Math.min(scaleFactor, 1.4); // foto sudah besar, jangan berlebihan upscale
+
   const w = img.width, h = img.height;
   const upW = Math.round(w*scaleFactor), upH = Math.round(h*scaleFactor);
 
-  // Step 1: high-quality upscale via staged smoothing (reduces blockiness vs single-step)
+  // Step 1: high-quality upscale via staged smoothing (mengurangi
+  // blocky/aliasing dibanding upscale 1 langkah besar).
   let stage = img;
   let curW = w, curH = h;
   const steps = 2;
@@ -2291,23 +2554,51 @@ function enhanceImage(img){
 
   const ctx = stageCanvas.getContext('2d');
   const imgData = ctx.getImageData(0,0,curW,curH);
-  const data = imgData.data;
+  let data = imgData.data;
 
-  // Step 2: unsharp mask (gaussian blur approx via box blur x3, then subtract)
-  const blurred = boxBlur3(data, curW, curH);
-  const amount = 0.9; // sharpen strength
+  // Step 2: noise reduction RINGAN sebelum sharpen — supaya unsharp mask
+  // di step 3 tidak ikut memperkuat grain/noise sensor kamera HP. Cuma
+  // dijalankan kalau noise-nya memang cukup tinggi, biar foto yang sudah
+  // bersih tidak kehilangan detail asli karena diblur percuma.
+  if(quality.noiseScore > 3.5){
+    data = boxBlurPass(data, curW, curH, 1); // 1 pass radius-1 cukup utk meredam grain halus
+  }
+
+  // Step 3: unsharp mask ADAPTIF — radius blur & kekuatan sharpen
+  // menyesuaikan level blur hasil analisis. Foto yang sudah tajam dikasih
+  // sharpen ringan saja (mencegah halo/ringing berlebih di tepi teks),
+  // foto sangat buram dikasih sharpen lebih kuat + radius lebih besar
+  // supaya menjangkau detail yang lebih "lebar" blur-nya.
+  const passes = quality.blurLevel==='sangat buram' ? 3 : (quality.blurLevel==='cukup buram' ? 2 : 1);
+  let blurred = data;
+  for(let i=0;i<passes;i++) blurred = boxBlurPass(blurred, curW, curH, 1);
+
+  const amount = quality.blurLevel==='sangat buram' ? 1.35
+               : quality.blurLevel==='cukup buram' ? 1.0
+               : 0.55;
+  const sharpened = new Uint8ClampedArray(data.length);
   for(let i=0;i<data.length;i+=4){
     for(let c=0;c<3;c++){
       const orig = data[i+c];
       const blur = blurred[i+c];
-      let v = orig + (orig-blur)*amount;
-      data[i+c] = clamp(v);
+      sharpened[i+c] = clamp(orig + (orig-blur)*amount);
     }
+    sharpened[i+3] = data[i+3];
   }
+  data = sharpened;
 
-  // Step 3: adaptive contrast + slight saturation lift (helps faded/washed-out card photos)
-  const contrast = 1.12;
-  const brightness = 6;
+  // Step 4: contrast & brightness ADAPTIF berdasar kecerahan rata-rata —
+  // foto gelap/washed-out (umum pada foto KTP di dalam ruangan cahaya
+  // kurang) dinaikkan lebih banyak, foto yang sudah cukup terang cukup
+  // disentuh tipis supaya warna tidak over-blown/pecah.
+  let contrast, brightness;
+  if(quality.avgBrightness < 90){        // gelap
+    contrast = 1.18; brightness = 14;
+  } else if(quality.avgBrightness > 190){ // sudah terang/washed-out
+    contrast = 1.08; brightness = -4;
+  } else {                                // normal
+    contrast = 1.12; brightness = 6;
+  }
   for(let i=0;i<data.length;i+=4){
     for(let c=0;c<3;c++){
       let v = (data[i+c]-128)*contrast + 128 + brightness;
@@ -2315,21 +2606,75 @@ function enhanceImage(img){
     }
   }
 
+  imgData.data.set(data);
   ctx.putImageData(imgData, 0, 0);
-  return { dataURL: stageCanvas.toDataURL('image/jpeg', 0.95), canvas: stageCanvas };
+  return {
+    dataURL: stageCanvas.toDataURL('image/jpeg', 0.95),
+    canvas: stageCanvas,
+    meta: { ...quality, scaleFactor, engine: 'local-smart' }
+  };
+}
+
+// ---------------------------------------------------------
+// AI ENHANCE (cloud, opsional) — mengirim gambar ke endpoint eksternal
+// yang membungkus model super-resolution (mis. Real-ESRGAN) utk hasil
+// yang jauh lebih baik dari filter matematis biasa, terutama utk foto
+// yang sangat buram/kecil. TIDAK aktif kecuali AI_ENHANCE_API_BASE diisi
+// endpoint sungguhan oleh maintainer (lihat konstanta di atas).
+//
+// Kontrak endpoint yang diharapkan (silakan sesuaikan dgn implementasi
+// server kamu): POST {AI_ENHANCE_API_BASE} dgn JSON { image: dataURL },
+// balasan JSON { image: dataURL_hasil } ATAU langsung binary image/*.
+// ---------------------------------------------------------
+async function enhanceImageAI(sourceDataURL, onProgress){
+  onProgress && onProgress('Mengunggah foto ke AI Enhance…');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(()=>controller.abort(), AI_ENHANCE_TIMEOUT_MS);
+
+  try{
+    const res = await fetch(AI_ENHANCE_API_BASE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: sourceDataURL }),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    if(!res.ok) throw new Error(`AI Enhance HTTP ${res.status}`);
+
+    onProgress && onProgress('Memproses hasil AI Enhance…');
+    const contentType = res.headers.get('content-type') || '';
+    let resultDataURL;
+    if(contentType.includes('application/json')){
+      const json = await res.json();
+      if(!json || !json.image) throw new Error('Respons AI Enhance tidak berisi field "image"');
+      resultDataURL = json.image;
+    } else if(contentType.startsWith('image/')){
+      const blob = await res.blob();
+      resultDataURL = await new Promise((resolve,reject)=>{
+        const reader = new FileReader();
+        reader.onload = ()=>resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } else {
+      throw new Error('Tipe respons AI Enhance tidak dikenali: '+contentType);
+    }
+
+    const img = await loadImage(resultDataURL);
+    const cv = document.createElement('canvas');
+    cv.width = img.width; cv.height = img.height;
+    cv.getContext('2d').drawImage(img,0,0);
+    return { dataURL: resultDataURL, canvas: cv, meta: { engine: 'ai-cloud' } };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function clamp(v){ return v<0?0:(v>255?255:v); }
 
-function boxBlur3(data, w, h){
-  let out = boxBlurPass(data, w, h);
-  out = boxBlurPass(out, w, h);
-  out = boxBlurPass(out, w, h);
-  return out;
-}
-function boxBlurPass(data, w, h){
+function boxBlurPass(data, w, h, radius){
+  radius = radius || 1;
   const out = new Uint8ClampedArray(data.length);
-  const radius = 1;
   for(let y=0;y<h;y++){
     for(let x=0;x<w;x++){
       let r=0,g=0,b=0,a=0,count=0;

@@ -391,7 +391,20 @@
   .icnbtn.danger svg{stroke:var(--danger);}
   .icnbtn.danger span{color:var(--danger);}
   .icnbtn.danger:hover{background:var(--danger-soft);border-color:#f3c6c4;}
+  .icnbtn.ai{border-color:#bfd4fb;background:#eff6ff;}
+  .icnbtn.ai svg{stroke:#2563eb;}
+  .icnbtn.ai span{color:#2563eb;}
+  .icnbtn.ai:hover{background:#dbeafe;border-color:#93c5fd;}
   .icnbtn:disabled{opacity:.35;cursor:not-allowed;transform:none;}
+  .enhance-progress{
+    font-family:var(--font-body);font-size:10px;font-weight:600;color:#2563eb;
+    display:flex;align-items:center;gap:5px;margin-top:2px;
+  }
+  .enhance-progress::before{
+    content:'';width:6px;height:6px;border-radius:50%;background:#2563eb;
+    animation:pulse-dot 1s ease-in-out infinite;flex-shrink:0;
+  }
+  @keyframes pulse-dot{0%,100%{opacity:.3;}50%{opacity:1;}}
   .spin{animation:spin .8s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
 
