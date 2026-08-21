@@ -968,6 +968,10 @@
   .icnbtn.ai svg{stroke:#2563eb;}
   .icnbtn.ai span{color:#2563eb;}
   .icnbtn.ai:hover{background:#dbeafe;border-color:#93c5fd;}
+  .icnbtn.adjusted{border-color:var(--accent);background:var(--accent-soft);}
+  .icnbtn.adjusted svg{stroke:var(--accent);}
+  .icnbtn.adjusted span{color:var(--accent);}
+  .icnbtn.adjusted:hover{background:var(--accent-soft);border-color:var(--accent-hover);}
   .icnbtn:disabled{opacity:.35;cursor:not-allowed;transform:none;}
   .enhance-progress{
     font-family:var(--font-body);font-size:10px;font-weight:600;color:#2563eb;
@@ -1502,6 +1506,118 @@
   .rotbtn:active{transform:scale(.94);}
   .rotbtn svg{width:19px;height:19px;stroke:var(--ink);}
 
+  /* ============ Sesuaikan Foto (Adjust: brightness/contrast/dll) ============ */
+  .adjust-modal{max-width:640px;}
+  .adjust-layout{display:flex;flex-direction:column;gap:16px;}
+  .adjust-preview-wrap{
+    position:relative;
+    background:#101114;
+    border-radius:14px;
+    overflow:hidden;
+    display:flex;align-items:center;justify-content:center;
+    min-height:220px;
+    padding:14px;
+  }
+  .adjust-preview-wrap canvas{max-width:100%;max-height:52vh;display:block;border-radius:4px;box-shadow:0 4px 18px rgba(0,0,0,.35);will-change:contents;}
+  .adjust-preview-badges{
+    position:absolute;top:10px;left:10px;
+    display:flex;gap:6px;flex-wrap:wrap;
+  }
+  .adjust-badge{
+    font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.2px;
+    color:#fff;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);
+    padding:4px 9px;border-radius:20px;
+    display:flex;align-items:center;gap:5px;
+  }
+  .adjust-badge.bw{background:rgba(35,134,54,.75);}
+  .adjust-bw-toggle{
+    position:absolute;top:10px;right:10px;
+    display:flex;background:rgba(0,0,0,.5);backdrop-filter:blur(4px);
+    border-radius:20px;padding:3px;gap:2px;
+  }
+  .adjust-bw-toggle button{
+    font-family:var(--font-body);font-size:11px;font-weight:700;
+    color:rgba(255,255,255,.7);background:transparent;border:none;
+    padding:6px 12px;border-radius:16px;cursor:pointer;transition:.14s ease;
+    white-space:nowrap;
+  }
+  .adjust-bw-toggle button.active{background:#fff;color:#0d1117;}
+  .adjust-sliders{
+    display:flex;flex-direction:column;gap:4px;
+    background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    padding:6px 16px;box-shadow:var(--shadow-xs);
+  }
+  .adjust-slider-row{
+    display:flex;align-items:center;gap:12px;
+    padding:11px 0;
+    border-bottom:1px solid var(--border);
+  }
+  .adjust-slider-row:last-child{border-bottom:none;}
+  .adjust-slider-icon{
+    width:32px;height:32px;border-radius:9px;flex-shrink:0;
+    background:var(--surface-2);border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .adjust-slider-icon svg{width:16px;height:16px;stroke:var(--ink-soft);}
+  .adjust-slider-main{flex:1;min-width:0;}
+  .adjust-slider-label{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    margin-bottom:6px;
+  }
+  .adjust-slider-label b{font-family:var(--font-body);font-size:var(--fs-sm);font-weight:600;color:var(--ink);}
+  .adjust-slider-val{
+    font-family:var(--mono);font-size:var(--fs-xs);font-weight:700;color:var(--ink-faint);
+    font-variant-numeric:tabular-nums;min-width:34px;text-align:right;
+  }
+  .adjust-slider-row.is-active .adjust-slider-val{color:var(--accent);}
+  .adjust-slider-row.is-active .adjust-slider-icon{border-color:var(--accent);background:var(--accent-soft);}
+  .adjust-slider-row.is-active .adjust-slider-icon svg{stroke:var(--accent);}
+  input[type=range].adjust-range{
+    -webkit-appearance:none;appearance:none;
+    width:100%;height:5px;border-radius:4px;
+    background:var(--border-strong);
+    outline:none;cursor:pointer;
+    margin:0;
+    /* touch-action:none mencegah browser mobile ikut nge-scroll halaman
+       vertikal saat jari menyentuh slider utk drag horizontal -- tanpa
+       ini, drag di HP kadang kerasa "nyangkut"/konflik dgn gesture
+       scroll bawaan browser, apalagi di dalam modal yg overflow:auto. */
+    touch-action:none;
+  }
+  input[type=range].adjust-range::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;
+    width:18px;height:18px;border-radius:50%;
+    background:var(--accent);border:3px solid var(--bg);
+    box-shadow:0 1px 4px rgba(0,0,0,.3);
+    cursor:pointer;transition:transform .1s ease;
+  }
+  input[type=range].adjust-range::-webkit-slider-thumb:hover{transform:scale(1.12);}
+  input[type=range].adjust-range:active::-webkit-slider-thumb{transform:scale(1.22);box-shadow:0 2px 8px rgba(0,0,0,.4);}
+  input[type=range].adjust-range::-moz-range-thumb{
+    width:18px;height:18px;border-radius:50%;
+    background:var(--accent);border:3px solid var(--bg);
+    box-shadow:0 1px 4px rgba(0,0,0,.3);cursor:pointer;
+    transition:transform .1s ease;
+  }
+  input[type=range].adjust-range:active::-moz-range-thumb{transform:scale(1.22);}
+  input[type=range].adjust-range::-moz-range-track{background:var(--border-strong);height:5px;border-radius:4px;}
+  .adjust-presets{display:flex;gap:8px;flex-wrap:wrap;}
+  .adjust-preset-btn{
+    font-family:var(--font-body);font-size:var(--fs-2xs);font-weight:600;color:var(--ink-soft);
+    background:var(--surface);border:1.5px solid var(--border);border-radius:20px;
+    padding:8px 14px;cursor:pointer;transition:.14s ease;
+  }
+  .adjust-preset-btn:hover{border-color:var(--accent);color:var(--ink);}
+  .adjust-preset-btn.active{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);}
+  .adjust-reset-link{
+    font-family:var(--font-body);font-size:var(--fs-xs);font-weight:700;color:var(--ink-faint);
+    background:none;border:none;cursor:pointer;display:flex;align-items:center;gap:5px;
+    padding:6px 2px;transition:.14s ease;
+  }
+  .adjust-reset-link:hover{color:var(--danger);}
+  .adjust-reset-link svg{width:13px;height:13px;stroke:currentColor;}
+  .adjust-hint-row{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:-6px;}
+
   /* ============ Cetak Langsung (window.print) ============ */
   #printArea{display:none;}
   #printArea .print-page{
@@ -1802,6 +1918,88 @@
       <button class="btn btn-ghost" onclick="autoDetectCrop()">↺ Deteksi Ulang</button>
       <button class="btn btn-ghost" id="btnSkipCrop" onclick="closeCropModal()" style="display:none;">Lewati Foto Ini →</button>
       <button class="btn btn-primary" onclick="saveCrop()">✓ Simpan Crop</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Sesuaikan Foto (kecerahan/kontras/saturasi/bayangan/highlight/ketajaman) -->
+<div class="modal-backdrop" id="adjustModal" style="display:none;" onclick="if(event.target===this) closeAdjustModal()">
+  <div class="modal adjust-modal">
+    <button class="modal-close" onclick="closeAdjustModal()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+    <h3>Sesuaikan Foto</h3>
+    <p class="hint">Atur pencahayaan &amp; warna foto secara manual — berguna kalau foto KTP terlalu gelap/terang saat dicetak (terutama mode Hitam Putih). Pratinjau di bawah menampilkan hasil PERSIS seperti yang akan dicetak, termasuk mode warnanya.</p>
+    <div class="adjust-layout">
+      <div class="adjust-preview-wrap">
+        <div class="adjust-preview-badges">
+          <span class="adjust-badge" id="adjustModeBadge">Mode Warna</span>
+        </div>
+        <div class="adjust-bw-toggle" id="adjustPreviewToggle">
+          <button type="button" data-preview-mode="match" class="active">Sesuai Mode Cetak</button>
+          <button type="button" data-preview-mode="bw">Pratinjau H&amp;P</button>
+        </div>
+        <canvas id="adjustPreviewCanvas"></canvas>
+      </div>
+
+      <div class="adjust-hint-row">
+        <div class="adjust-presets" id="adjustPresets">
+          <button type="button" class="adjust-preset-btn" data-preset="terangkan">☀️ Foto Kurang Cahaya</button>
+          <button type="button" class="adjust-preset-btn" data-preset="kontrasBW">◐ Pertajam utk Cetak H&amp;P</button>
+          <button type="button" class="adjust-preset-btn" data-preset="netral">Netral</button>
+        </div>
+        <button type="button" class="adjust-reset-link" id="btnAdjustReset">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+          Reset ke Semula
+        </button>
+      </div>
+
+      <div class="adjust-sliders">
+        <div class="adjust-slider-row" data-row="brightness">
+          <div class="adjust-slider-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg></div>
+          <div class="adjust-slider-main">
+            <div class="adjust-slider-label"><b>Kecerahan</b><span class="adjust-slider-val" id="valBrightness">0</span></div>
+            <input type="range" class="adjust-range" id="rngBrightness" min="-100" max="100" step="1" value="0">
+          </div>
+        </div>
+        <div class="adjust-slider-row" data-row="contrast">
+          <div class="adjust-slider-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 000 20z" fill="currentColor" stroke="none"/></svg></div>
+          <div class="adjust-slider-main">
+            <div class="adjust-slider-label"><b>Kontras</b><span class="adjust-slider-val" id="valContrast">0</span></div>
+            <input type="range" class="adjust-range" id="rngContrast" min="-100" max="100" step="1" value="0">
+          </div>
+        </div>
+        <div class="adjust-slider-row" data-row="shadows">
+          <div class="adjust-slider-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg></div>
+          <div class="adjust-slider-main">
+            <div class="adjust-slider-label"><b>Bayangan</b><span class="adjust-slider-val" id="valShadows">0</span></div>
+            <input type="range" class="adjust-range" id="rngShadows" min="-100" max="100" step="1" value="0">
+          </div>
+        </div>
+        <div class="adjust-slider-row" data-row="highlights">
+          <div class="adjust-slider-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg></div>
+          <div class="adjust-slider-main">
+            <div class="adjust-slider-label"><b>Highlight</b><span class="adjust-slider-val" id="valHighlights">0</span></div>
+            <input type="range" class="adjust-range" id="rngHighlights" min="-100" max="100" step="1" value="0">
+          </div>
+        </div>
+        <div class="adjust-slider-row" data-row="saturation">
+          <div class="adjust-slider-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C7 7 4 10.5 4 14a8 8 0 0016 0c0-3.5-3-7-8-12z"/></svg></div>
+          <div class="adjust-slider-main">
+            <div class="adjust-slider-label"><b>Saturasi</b><span class="adjust-slider-val" id="valSaturation">0</span></div>
+            <input type="range" class="adjust-range" id="rngSaturation" min="-100" max="100" step="1" value="0">
+          </div>
+        </div>
+        <div class="adjust-slider-row" data-row="sharpen">
+          <div class="adjust-slider-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg></div>
+          <div class="adjust-slider-main">
+            <div class="adjust-slider-label"><b>Ketajaman</b><span class="adjust-slider-val" id="valSharpen">0</span></div>
+            <input type="range" class="adjust-range" id="rngSharpen" min="0" max="100" step="1" value="0">
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="crop-controls">
+      <button class="btn btn-ghost" onclick="closeAdjustModal()">Batal</button>
+      <button class="btn btn-primary" id="btnSaveAdjust">✓ Terapkan</button>
     </div>
   </div>
 </div>

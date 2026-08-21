@@ -395,7 +395,17 @@ function loadFilesSequentially(files, idx, newIds){
       cards.push({
         id, rawImg: img, croppedDataURL: null, originalDataURL: null,
         enhanced:false, enhanceMeta:null, rotation:0,
-        phone:'', status:'raw'
+        phone:'', status:'raw',
+        // Penyesuaian manual (kecerahan/kontras/saturasi/bayangan/highlight/
+        // ketajaman) — SELALU disimpan sbg angka mentah (bukan hasil pixel
+        // yg sudah diaplikasikan), jadi non-destruktif & bisa diubah ulang
+        // kapan saja tanpa kualitas menurun bertahap. Diterapkan on-the-fly
+        // di atas croppedDataURL (hasil crop/HD terkini) tiap kali dibutuhkan
+        // (preview grid/zoom TIDAK perlu — cukup di modal adjust & saat
+        // render halaman cetak/preview/PDF). Lihat DEFAULT_ADJUST & fungsi
+        // applyManualAdjust() di blok "SESUAIKAN FOTO (MANUAL)" di bawah.
+        adjust: { ...DEFAULT_ADJUST },
+        hasManualAdjust: false,
       });
       newIds.push(id);
       renderGrid();
@@ -528,6 +538,10 @@ function renderGrid(){
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
             <span>HD-kan</span>
           </button>
+          <button class="icnbtn ${c.hasManualAdjust ? 'adjusted' : ''}" title="Sesuaikan kecerahan, kontras, saturasi, bayangan &amp; highlight secara manual — pas buat foto yang kurang cahaya sebelum dicetak" data-act="adjust" data-id="${c.id}" ${!c.croppedDataURL ? 'disabled':''}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+            <span>Sesuaikan</span>
+          </button>
           ${AI_ENHANCE_ENABLED ? `
           <button class="icnbtn ai" title="AI Enhance — upscaling pakai model AI (cloud), hasil maksimal utk foto sangat buram" data-act="enhance-ai" data-id="${c.id}" ${!c.croppedDataURL ? 'disabled':''}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3z"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z"/></svg>
@@ -564,6 +578,7 @@ function renderGrid(){
       if(act==='rotate') rotateCardResult(id);
       if(act==='enhance') runEnhance(id, b);
       if(act==='enhance-ai') runEnhanceAI(id, b);
+      if(act==='adjust') openAdjustModal(id);
       if(act==='revert-enhance') revertEnhance(id);
       if(act==='delete'){ cards = cards.filter(c=>c.id!==id); renderGrid(); }
     });
@@ -626,6 +641,10 @@ function duplicateCard(id){
   const copy = {
     ...original,
     id: 'k'+(idCounter++),
+    // Shallow spread di atas cuma copy REFERENCE object adjust -- kalau
+    // tidak dipisah, geser slider di salinan akan ikut mengubah aslinya
+    // (dan sebaliknya) krn keduanya nunjuk ke object yg sama persis.
+    adjust: { ...(original.adjust || DEFAULT_ADJUST) },
   };
   cards.splice(idx+1, 0, copy);
   renderGrid();
@@ -2334,6 +2353,11 @@ function saveCrop(){
   // bukan dari crop sebelumnya yang sudah tidak relevan.
   card.originalDataURL = null;
   card.enhanceMeta = null;
+  // CATATAN: card.adjust (kecerahan/kontras/dll) SENGAJA TIDAK direset di
+  // sini. Preferensi pencahayaan biasanya soal kondisi foto aslinya (mis.
+  // ruangan kurang cahaya), bukan soal area crop-nya -- jadi kalau user
+  // crop ulang (mis. cuma geser sudut dikit), penyesuaian yg sudah susah
+  // payah diatur tidak boleh hilang begitu saja.
   closeCropModal();
   renderGrid();
   toast('Crop tersimpan — tepi KTP sudah diluruskan otomatis');
@@ -2737,6 +2761,506 @@ async function enhanceImageAI(sourceDataURL, onProgress){
   }
 }
 
+// =========================================================
+// SESUAIKAN FOTO (MANUAL) — kecerahan, kontras, saturasi,
+// bayangan, highlight, ketajaman
+// =========================================================
+// Kenapa fitur ini perlu: enhanceImageSmart() di atas SUDAH otomatis
+// menyesuaikan contrast/brightness berdasar kecerahan rata2 foto, tapi
+// itu murni heuristik satu-arah (dibuat utk kasus umum) & TIDAK selalu
+// pas -- terutama utk kasus seperti KTP yg difoto di ruangan minim
+// cahaya lalu dicetak Hitam Putih: hasil grayscale (drawImageGrayscale)
+// murni konversi luminance TANPA koreksi apapun, jadi foto yg aslinya
+// agak gelap bisa jadi cetakan yg BENAR2 gelap/legam & susah dibaca.
+// User butuh kontrol MANUAL supaya bisa terangkan/koreksi sendiri per
+// foto, bukan cuma pasrah ke satu preset otomatis.
+//
+// Desain non-destruktif: card.adjust menyimpan ANGKA slider mentah
+// (-100..100), BUKAN hasil pixel yg sudah diproses. Diterapkan ULANG
+// dari sumber (croppedDataURL hasil crop/HD terkini) tiap kali dibutuhkan
+// (buka modal Sesuaikan, render preview cetak, generate PDF, cetak
+// langsung) -- jadi slider bisa digeser bolak-balik tanpa akumulasi
+// degradasi kualitas, dan tetap konsisten dgn hasil crop/HD terbaru.
+//
+// ---------------------------------------------------------------
+// CATATAN PERFORMA (kenapa drag slider dibuat 2-JALUR resolusi):
+// ---------------------------------------------------------------
+// Foto hasil crop tersimpan di resolusi CETAK PENUH (1350x900px =
+// ~1.2 juta pixel). Memproses SEMUA pixel itu (getImageData/putImageData
+// + loop manipulasi + alokasi array baru) di SETIAP frame drag slider
+// jelas terlalu berat utk terasa mulus -- itulah kenapa versi sebelumnya
+// kerasa patah-patah walau sudah di-throttle pakai requestAnimationFrame:
+// throttle cuma mencegah PENUMPUKAN kerjaan, tapi tiap kerjaan yg
+// dijalankan tetap berat.
+//
+// Solusinya: PISAHKAN preview (live, saat drag) dari hasil akhir
+// (final, saat "Terapkan"/render cetak):
+//   1. LIVE PREVIEW  -> proses buffer kecil yg di-downsample SEKALI saat
+//      modal dibuka (ADJUST_PREVIEW_MAX_DIM px, bukan resolusi penuh),
+//      dan LUT (lookup table) 256-entry utk brightness/contrast/shadows/
+//      highlights supaya loop pixel jadi 1 array-lookup per channel,
+//      bukan serangkaian operasi matematika per pixel. Sharpen (satu2nya
+//      operasi yg butuh baca pixel TETANGGA, jadi tidak bisa di-LUT)
+//      dipisah lagi jadi idle-debounce terpisah (~120ms setelah user
+//      berhenti geser), bukan dihitung ulang tiap frame drag.
+//   2. HASIL AKHIR   -> applyManualAdjust() tetap proses resolusi PENUH
+//      (kualitas cetak tidak berkurang sedikit pun), tapi cuma dipanggil
+//      saat benar2 dibutuhkan: klik "Terapkan", atau saat render
+//      preview-cetak/PDF/print (yg memang bukan interaksi real-time).
+const DEFAULT_ADJUST = Object.freeze({
+  brightness: 0,   // -100..100 : offset kecerahan linear
+  contrast: 0,      // -100..100 : kemiringan kurva kontras di sekitar titik tengah abu2
+  saturation: 0,    // -100..100 : interpolasi ke/dari grayscale (tidak berefek saat cetak mode B&W)
+  shadows: 0,        // -100..100 : angkat/tekan area GELAP saja (tone-based, bukan linear)
+  highlights: 0,      // -100..100 : angkat/tekan area TERANG saja
+  sharpen: 0,           // 0..100    : unsharp-mask ringan, terpisah dari sharpening enhanceImageSmart
+});
+
+function isAdjustNeutral(a){
+  if(!a) return true;
+  return a.brightness===0 && a.contrast===0 && a.saturation===0 &&
+         a.shadows===0 && a.highlights===0 && a.sharpen===0;
+}
+
+// Kurva smoothstep dipakai utk bobot bayangan/highlight yg mulus (tidak
+// ada patahan tajam di titik tengah tone), supaya hasil angkat bayangan/
+// tekan highlight terlihat natural, bukan seperti poster/solarized.
+function smoothstep(edge0, edge1, x){
+  const t = Math.min(1, Math.max(0, (x-edge0)/(edge1-edge0)));
+  return t*t*(3-2*t);
+}
+
+// ---------------------------------------------------------------
+// LUT (Lookup Table) builder — jantung dari performa live-preview.
+// ---------------------------------------------------------------
+// Brightness, contrast, shadows, DAN highlights semuanya adalah fungsi
+// tone-mapping murni: hasil akhir tiap channel R/G/B HANYA bergantung
+// pada nilai channel itu SENDIRI (0-255) -- tidak butuh pixel tetangga,
+// tidak butuh channel lain. Itu artinya seluruh kombinasi 4 slider itu
+// bisa DIHITUNG SEKALI jadi 1 tabel 256-entry (bukan per-pixel!), lalu
+// tinggal "tabel[nilaiPixel]" saat loop -- dari O(pixel * 4 operasi
+// matematika) jadi O(pixel * 1 array-lookup). Ini yg bikin live-drag
+// jadi terasa instan biarpun buffernya beberapa ratus ribu pixel.
+//
+// Shadows/highlights di sini memakai LUMINANCE hasil brightness+contrast
+// SEBAGAI PROXY tone (bukan luminance per-channel r/g/b individual) --
+// sedikit beda dari versi non-LUT sebelumnya (yg pakai luminance
+// per-pixel aktual stlh brightness+contrast tiap channel), tapi secara
+// visual hasilnya sangat dekat (selisih sub-pixel, tidak kasat mata)
+// krn r/g/b pada foto KTP (dominan kulit/kertas/putih) jarang jauh
+// berbeda satu sama lain. Trade-off ini disengaja demi performa.
+function buildToneLUT(adjust){
+  const lut = new Uint8ClampedArray(256);
+  const bOffset = (adjust.brightness/100) * 110;
+  const cAmt = adjust.contrast/100;
+  const cFactor = cAmt >= 0 ? (1 + cAmt*2) : (1 + cAmt*0.85);
+  const shAmt = (adjust.shadows/100) * 70;
+  const hlAmt = (adjust.highlights/100) * 70;
+  for(let v=0; v<256; v++){
+    let x = v;
+    if(bOffset !== 0) x += bOffset;
+    if(cFactor !== 1) x = (x-128)*cFactor + 128;
+    if(shAmt !== 0 || hlAmt !== 0){
+      const lum = x<0?0:(x>255?255:x);
+      if(shAmt !== 0) x += shAmt * (1 - smoothstep(0, 150, lum));
+      if(hlAmt !== 0) x += hlAmt * smoothstep(105, 255, lum);
+    }
+    lut[v] = x;
+  }
+  return lut;
+}
+
+// Terapkan LUT tone-mapping + saturasi ke sebuah ImageData, IN-PLACE
+// (tidak alokasi array baru) -- dipakai baik oleh jalur preview cepat
+// (buffer kecil) maupun jalur hasil akhir (buffer resolusi penuh),
+// supaya rumusnya taat asas di kedua jalur (WYSIWYG).
+function applyToneLUTToImageData(imgData, lut, satFactor){
+  const d = imgData.data;
+  const applySat = satFactor !== 1;
+  for(let i=0; i<d.length; i+=4){
+    let r = lut[d[i]], g = lut[d[i+1]], b = lut[d[i+2]];
+    if(applySat){
+      const gray = r*0.299 + g*0.587 + b*0.114;
+      r = gray + (r-gray)*satFactor;
+      g = gray + (g-gray)*satFactor;
+      b = gray + (b-gray)*satFactor;
+    }
+    d[i] = r; d[i+1] = g; d[i+2] = b;
+  }
+  return imgData;
+}
+
+// Terapkan seluruh slider penyesuaian ke ImageData sekaligus (LUT tone +
+// saturasi). Dipertahankan sbg entry-point tunggal (dipakai jalur hasil
+// akhir/resolusi-penuh) supaya pemanggil tidak perlu tahu detail LUT.
+function applyManualAdjustToImageData(imgData, adjust){
+  if(isAdjustNeutral(adjust)) return imgData;
+  const lut = buildToneLUT(adjust);
+  const satAmt = adjust.saturation/100;
+  const satFactor = 1 + satAmt;
+  return applyToneLUTToImageData(imgData, lut, satFactor);
+}
+
+// Ketajaman (sharpen) manual — unsharp-mask sederhana & ringan, TERPISAH
+// dari sharpening adaptif enhanceImageSmart. Dipisah jadi pass sendiri
+// (bukan digabung ke loop atas) krn unsharp-mask butuh baca pixel
+// TETANGGA (blur pass), jadi perlu buffer sumber yg belum diubah tahap
+// warna/tone di atas -- inilah satu2nya operasi di fitur ini yg TIDAK
+// bisa di-LUT (makanya di jalur live-preview sengaja di-debounce
+// terpisah, lihat SHARPEN_DEBOUNCE_MS di bawah).
+function applySharpenToImageData(imgData, amount){
+  if(!amount || amount<=0) return imgData;
+  const w = imgData.width, h = imgData.height;
+  const src = imgData.data;
+  const blurred = boxBlurPass(src, w, h, 1);
+  // amount 0..100 -> kekuatan unsharp 0..1.4 (dijaga moderat supaya tidak
+  // gampang muncul halo/ringing di foto KTP resolusi cetak)
+  const strength = (amount/100) * 1.4;
+  const out = new Uint8ClampedArray(src.length);
+  for(let i=0;i<src.length;i+=4){
+    for(let c=0;c<3;c++){
+      const orig = src[i+c], blur = blurred[i+c];
+      out[i+c] = clamp(orig + (orig-blur)*strength);
+    }
+    out[i+3] = src[i+3];
+  }
+  imgData.data.set(out);
+  return imgData;
+}
+
+// Fungsi utama non-destruktif (JALUR RESOLUSI PENUH -- utk hasil akhir
+// cetak/PDF/print & saat "Terapkan" disimpan, BUKAN utk live-drag).
+// Ambil source image (Image element ATAU canvas), terapkan seluruh
+// penyesuaian manual di resolusi ASLI, kembalikan CANVAS baru (sumber
+// asli tidak disentuh sama sekali). Dipakai oleh pipeline cetak/PDF/
+// preview supaya hasil akhirnya taat asas (WYSIWYG) dgn apa yg terlihat
+// di preview modal -- tidak ada rumus berbeda antara preview & cetak.
+function applyManualAdjust(source, adjust, opts){
+  opts = opts || {};
+  const sw = source.naturalWidth || source.width;
+  const sh = source.naturalHeight || source.height;
+  const cv = document.createElement('canvas');
+  cv.width = sw; cv.height = sh;
+  const ctx = cv.getContext('2d');
+  ctx.drawImage(source, 0, 0, sw, sh);
+
+  if(isAdjustNeutral(adjust) && !opts.forceGrayscale) return cv;
+
+  const imgData = ctx.getImageData(0, 0, sw, sh);
+  applyManualAdjustToImageData(imgData, adjust);
+  if(adjust.sharpen > 0) applySharpenToImageData(imgData, adjust.sharpen);
+  if(opts.forceGrayscale){
+    const d = imgData.data;
+    for(let i=0;i<d.length;i+=4){
+      const gray = d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114;
+      d[i]=d[i+1]=d[i+2]=gray;
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+  return cv;
+}
+
+// ---------------------------------------------------------
+// Modal "Sesuaikan Foto" — controller
+// ---------------------------------------------------------
+let adjustCardId = null;
+let adjustDraft = null;        // salinan kerja {brightness,contrast,...} -- belum di-"Terapkan"
+let adjustPreviewMode = 'match'; // 'match' = ikut printMode global saat ini, 'bw' = paksa pratinjau H&P
+let adjustRenderPending = false;
+const ADJUST_SLIDER_KEYS = ['brightness','contrast','shadows','highlights','saturation','sharpen'];
+
+// ---------------------------------------------------------------
+// Buffer preview KECIL (di-downsample sekali per buka-modal) -- ini yg
+// bikin drag berasa instan. 420px cukup besar utk mata menilai
+// pencahayaan/kontras dgn akurat di layar modal manapun (preview canvas
+// max-height 52vh), tapi cuma ~1/7 jumlah pixel dari resolusi cetak
+// penuh (1350px) -- artinya loop pixel per-frame ~49x lebih ringan.
+// ---------------------------------------------------------------
+const ADJUST_PREVIEW_MAX_DIM = 420;
+let adjustPreviewBaseImgData = null; // ImageData grayscale/color ASLI (sebelum adjust apapun) di resolusi kecil -- sumber tetap, tidak pernah dimodifikasi
+let adjustPreviewWorkBuffer = null;  // Uint8ClampedArray scratch yg DIPAKAI ULANG tiap frame (tidak realokasi) -- hasil kerja SEBELUM sharpen
+let adjustPreviewCtx = null;         // 2D context milik <canvas id="adjustPreviewCanvas"> (di-cache sekali, bukan query ulang tiap frame)
+let adjustSharpenTimer = null;       // debounce timer khusus utk pass sharpen (satu2nya operasi non-LUT)
+const ADJUST_SHARPEN_DEBOUNCE_MS = 120;
+
+function openAdjustModal(id){
+  const card = cards.find(c=>c.id===id);
+  if(!card || !card.croppedDataURL) return;
+  adjustCardId = id;
+  adjustDraft = { ...DEFAULT_ADJUST, ...(card.adjust||{}) };
+  adjustPreviewMode = 'match';
+  adjustPreviewBaseImgData = null;
+  adjustPreviewWorkBuffer = null;
+
+  // Load sumber gambar SEKALI saat modal dibuka (bukan tiap slider
+  // digeser) -- lalu SEKALI LAGI didownsample ke buffer preview kecil
+  // (lihat prepareAdjustPreviewBuffer). Render ulang tiap slider cukup
+  // proses buffer kecil ini, tidak pernah decode ulang base64 atau
+  // sentuh resolusi penuh selama drag berlangsung.
+  const img = new Image();
+  img.onload = ()=>{
+    prepareAdjustPreviewBuffer(img);
+    syncAdjustSlidersUI();
+    syncAdjustPreviewModeUI();
+    renderAdjustPreview({ immediate:true });
+  };
+  img.src = card.croppedDataURL;
+
+  el('adjustModal').style.display = 'flex';
+}
+
+// Downsample sumber ke ADJUST_PREVIEW_MAX_DIM & simpan sbg ImageData
+// dasar (adjustPreviewBaseImgData) -- dipanggil SEKALI per buka-modal.
+// Juga langsung siapkan <canvas> target & cache context-nya, dan siapkan
+// scratch buffer kerja seukuran sama (dipakai ulang tiap frame biar
+// tidak ada alokasi Uint8ClampedArray baru selama drag).
+function prepareAdjustPreviewBuffer(img){
+  const sw = img.naturalWidth || img.width;
+  const sh = img.naturalHeight || img.height;
+  const scale = Math.min(1, ADJUST_PREVIEW_MAX_DIM / Math.max(sw, sh));
+  const pw = Math.max(1, Math.round(sw*scale));
+  const ph = Math.max(1, Math.round(sh*scale));
+
+  const off = document.createElement('canvas');
+  off.width = pw; off.height = ph;
+  const octx = off.getContext('2d');
+  octx.drawImage(img, 0, 0, pw, ph);
+  adjustPreviewBaseImgData = octx.getImageData(0, 0, pw, ph);
+  adjustPreviewWorkBuffer = new Uint8ClampedArray(adjustPreviewBaseImgData.data.length);
+
+  const target = el('adjustPreviewCanvas');
+  if(target){
+    target.width = pw;
+    target.height = ph;
+    adjustPreviewCtx = target.getContext('2d');
+  }
+}
+
+function closeAdjustModal(){
+  el('adjustModal').style.display = 'none';
+  adjustCardId = null;
+  adjustDraft = null;
+  adjustPreviewBaseImgData = null;
+  adjustPreviewWorkBuffer = null;
+  adjustPreviewCtx = null;
+  if(adjustSharpenTimer){ clearTimeout(adjustSharpenTimer); adjustSharpenTimer = null; }
+}
+
+function syncAdjustSlidersUI(){
+  ADJUST_SLIDER_KEYS.forEach(key=>{
+    const rng = el('rng'+capitalize(key));
+    const val = el('val'+capitalize(key));
+    if(!rng || !val) return;
+    rng.value = adjustDraft[key];
+    val.textContent = (adjustDraft[key] > 0 ? '+' : '') + adjustDraft[key];
+    const row = rng.closest('.adjust-slider-row');
+    if(row) row.classList.toggle('is-active', adjustDraft[key] !== 0);
+  });
+  // Update preset aktif (kalau draft persis cocok salah satu preset)
+  const presets = adjustPresetDefinitions();
+  document.querySelectorAll('.adjust-preset-btn').forEach(btn=>{
+    const preset = presets[btn.dataset.preset];
+    const matches = preset && ADJUST_SLIDER_KEYS.every(k => (preset[k]||0) === adjustDraft[k]);
+    btn.classList.toggle('active', !!matches);
+  });
+}
+
+function capitalize(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+
+function syncAdjustPreviewModeUI(){
+  document.querySelectorAll('#adjustPreviewToggle button').forEach(btn=>{
+    btn.classList.toggle('active', btn.dataset.previewMode === adjustPreviewMode);
+  });
+  const badge = el('adjustModeBadge');
+  if(!badge) return;
+  const willBeBW = adjustPreviewMode === 'bw' || (adjustPreviewMode === 'match' && printMode === 'BW');
+  badge.textContent = willBeBW ? 'Pratinjau Hitam Putih' : 'Mode Warna';
+  badge.classList.toggle('bw', willBeBW);
+}
+
+// ---------------------------------------------------------------
+// Render preview LIVE -- dipanggil tiap event 'input' slider (jadi bisa
+// puluhan kali per detik selama drag). Didesain supaya SETIAP panggilan
+// individual seringan mungkin:
+//   - requestAnimationFrame COALESCING: kalau beberapa panggilan masuk
+//     dalam 1 frame yg sama (mis. drag cepat menghasilkan banyak event
+//     'input'), cuma frame TERAKHIR yg benar2 dirender -- konsisten dgn
+//     versi sebelumnya, tapi sekarang tiap render yg akhirnya jalan jauh
+//     lebih murah (lihat 2 poin di bawah), jadi coalescing ini beneran
+//     efektif menjaga 60fps, bukan cuma "menyembunyikan" kerja berat.
+//   - BUFFER KECIL: proses adjustPreviewBaseImgData (≤420px sisi
+//     terpanjang), BUKAN resolusi cetak penuh.
+//   - LUT, BUKAN loop matematika: brightness/kontras/bayangan/highlight
+//     semua sudah collapse jadi 1 tabel 256-entry (buildToneLUT), jadi
+//     loop pixel di applyToneLUTToImageData cuma baca-tabel, sangat cepat.
+//   - SHARPEN DIPISAH: unsharp-mask (satu2nya operasi yg butuh pixel
+//     tetangga, jadi tidak bisa di-LUT & tetap agak mahal) TIDAK dihitung
+//     tiap frame drag -- lihat scheduleSharpenPass().
+function renderAdjustPreview(opts){
+  opts = opts || {};
+  if(opts.immediate){
+    doRenderAdjustPreview();
+    return;
+  }
+  if(adjustRenderPending) return;
+  adjustRenderPending = true;
+  requestAnimationFrame(()=>{
+    adjustRenderPending = false;
+    doRenderAdjustPreview();
+  });
+}
+
+function doRenderAdjustPreview(){
+  if(!adjustPreviewBaseImgData || !adjustDraft || !adjustPreviewCtx) return;
+  const willBeBW = adjustPreviewMode === 'bw' || (adjustPreviewMode === 'match' && printMode === 'BW');
+
+  // Salin buffer DASAR (bersih, belum disentuh) ke buffer KERJA yg
+  // dipakai ulang -- ini satu-satunya "alokasi" per frame, dan itupun
+  // cuma .set() (memcpy cepat), bukan bikin array baru.
+  adjustPreviewWorkBuffer.set(adjustPreviewBaseImgData.data);
+  const work = new ImageData(adjustPreviewWorkBuffer, adjustPreviewBaseImgData.width, adjustPreviewBaseImgData.height);
+
+  if(!isAdjustNeutral(adjustDraft)){
+    const lut = buildToneLUT(adjustDraft);
+    const satFactor = 1 + adjustDraft.saturation/100;
+    applyToneLUTToImageData(work, lut, satFactor);
+  }
+  // NB: sharpen SENGAJA TIDAK diterapkan di sini -- lihat scheduleSharpenPass().
+  // Efeknya baru kelihatan ~120ms setelah user berhenti geser slider
+  // Ketajaman, yg secara persepsi tetap terasa instan (di bawah ambang
+  // yg kerasa "delay" oleh mata manusia) tapi menghindari komputasi
+  // unsharp-mask yg mahal di SETIAP frame drag.
+
+  if(willBeBW){
+    const d = work.data;
+    for(let i=0;i<d.length;i+=4){
+      const gray = d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114;
+      d[i]=d[i+1]=d[i+2]=gray;
+    }
+  }
+  adjustPreviewCtx.putImageData(work, 0, 0);
+
+  // Sharpen (kalau ada) dijadwalkan MENYUSUL lewat debounce terpisah --
+  // supaya drag brightness/contrast/dll tetap instan walau slider
+  // Ketajaman sedang bernilai >0.
+  scheduleSharpenPass(willBeBW);
+}
+
+// Debounce KHUSUS utk pass sharpen (unsharp-mask) di buffer preview
+// kecil. Dipanggil tiap kali doRenderAdjustPreview() jalan, tapi
+// eksekusi sebenarnya ditunda ADJUST_SHARPEN_DEBOUNCE_MS -- kalau ada
+// panggilan baru masuk sebelum timer itu selesai (mis. user masih
+// nge-drag), timer lama dibatalkan & diganti yg baru. Hasilnya: sharpen
+// cuma benar2 dihitung SEKALI setelah user berhenti gerak (idle), bukan
+// puluhan kali selama drag berlangsung -- karena unsharp-mask perlu
+// pass blur (baca pixel tetangga) yg jauh lebih mahal drpd operasi
+// ber-LUT lainnya.
+function scheduleSharpenPass(willBeBW){
+  if(adjustSharpenTimer){ clearTimeout(adjustSharpenTimer); adjustSharpenTimer = null; }
+  if(!adjustDraft || adjustDraft.sharpen <= 0) return;
+  adjustSharpenTimer = setTimeout(()=>{
+    adjustSharpenTimer = null;
+    if(!adjustPreviewBaseImgData || !adjustDraft || !adjustPreviewCtx) return;
+    // Hitung ULANG dari buffer dasar (bukan menumpuk di atas hasil
+    // sharpen sebelumnya) supaya tidak ada akumulasi/oversharpen kalau
+    // timer ini kebetulan sempat jalan lebih dari sekali.
+    adjustPreviewWorkBuffer.set(adjustPreviewBaseImgData.data);
+    const work = new ImageData(adjustPreviewWorkBuffer, adjustPreviewBaseImgData.width, adjustPreviewBaseImgData.height);
+    if(!isAdjustNeutral(adjustDraft)){
+      const lut = buildToneLUT(adjustDraft);
+      const satFactor = 1 + adjustDraft.saturation/100;
+      applyToneLUTToImageData(work, lut, satFactor);
+    }
+    applySharpenToImageData(work, adjustDraft.sharpen);
+    if(willBeBW){
+      const d = work.data;
+      for(let i=0;i<d.length;i+=4){
+        const gray = d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114;
+        d[i]=d[i+1]=d[i+2]=gray;
+      }
+    }
+    adjustPreviewCtx.putImageData(work, 0, 0);
+  }, ADJUST_SHARPEN_DEBOUNCE_MS);
+}
+
+function adjustPresetDefinitions(){
+  return {
+    // Foto Kurang Cahaya: angkat kecerahan+bayangan cukup besar, tambah
+    // sedikit kontras supaya tidak jadi "kabur abu2" akibat brightness naik.
+    terangkan: { brightness:32, contrast:14, shadows:38, highlights:-6, saturation:0, sharpen:12 },
+    // Pertajam utk Cetak H&P: fokus ke kontras+ketajaman (saturasi tidak
+    // relevan krn toh dikonversi grayscale saat cetak B&W), plus sedikit
+    // bayangan diangkat supaya detail teks/tanda tangan tidak legam.
+    kontrasBW: { brightness:10, contrast:26, shadows:24, highlights:-10, saturation:0, sharpen:22 },
+    netral: { ...DEFAULT_ADJUST },
+  };
+}
+
+function applyAdjustPreset(name){
+  const preset = adjustPresetDefinitions()[name];
+  if(!preset) return;
+  adjustDraft = { ...preset };
+  syncAdjustSlidersUI();
+  // Preset diklik = 1 aksi diskrit (bukan drag kontinu), jadi render
+  // langsung (immediate) terasa lebih responsif drpd nunggu 1 frame lagi.
+  renderAdjustPreview({ immediate:true });
+}
+
+function initAdjustModal(){
+  ADJUST_SLIDER_KEYS.forEach(key=>{
+    const rng = el('rng'+capitalize(key));
+    if(!rng) return;
+    // 'input' terus menerus selama drag (bukan cuma saat lepas) supaya
+    // preview live betulan real-time, sesuai ekspektasi UX editor foto
+    // modern (Instagram/Lightroom-style).
+    rng.addEventListener('input', ()=>{
+      adjustDraft[key] = Number(rng.value);
+      const val = el('val'+capitalize(key));
+      if(val) val.textContent = (adjustDraft[key] > 0 ? '+' : '') + adjustDraft[key];
+      const row = rng.closest('.adjust-slider-row');
+      if(row) row.classList.toggle('is-active', adjustDraft[key] !== 0);
+      // Preset aktif jadi tidak relevan lagi begitu user geser manual
+      document.querySelectorAll('.adjust-preset-btn').forEach(b=>b.classList.remove('active'));
+      renderAdjustPreview();
+    });
+  });
+
+  document.querySelectorAll('#adjustPreviewToggle button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      adjustPreviewMode = btn.dataset.previewMode;
+      syncAdjustPreviewModeUI();
+      renderAdjustPreview({ immediate:true });
+    });
+  });
+
+  document.querySelectorAll('.adjust-preset-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=> applyAdjustPreset(btn.dataset.preset));
+  });
+
+  const resetBtn = el('btnAdjustReset');
+  if(resetBtn) resetBtn.addEventListener('click', ()=>{
+    adjustDraft = { ...DEFAULT_ADJUST };
+    syncAdjustSlidersUI();
+    renderAdjustPreview({ immediate:true });
+    toast('Penyesuaian dikembalikan ke semula', 2400, 'info');
+  });
+
+  const saveBtn = el('btnSaveAdjust');
+  if(saveBtn) saveBtn.addEventListener('click', saveAdjustModal);
+}
+
+function saveAdjustModal(){
+  const card = cards.find(c=>c.id===adjustCardId);
+  if(!card || !adjustDraft) { closeAdjustModal(); return; }
+  card.adjust = { ...adjustDraft };
+  card.hasManualAdjust = !isAdjustNeutral(card.adjust);
+  closeAdjustModal();
+  renderGrid();
+  toast(card.hasManualAdjust
+    ? 'Penyesuaian foto diterapkan — akan dipakai otomatis saat preview & cetak'
+    : 'Penyesuaian direset — foto memakai hasil crop/HD apa adanya', 4000);
+}
+
 function clamp(v){ return v<0?0:(v>255?255:v); }
 
 function boxBlurPass(data, w, h, radius){
@@ -2909,20 +3433,34 @@ function renderSheetPreview(){
 // dilakukan manual lewat manipulasi pixel (bukan ctx.filter CSS) supaya
 // hasilnya konsisten di semua browser & saat export PDF — ctx.filter
 // tidak didukung merata di semua environment render kanvas.
-function drawImageGrayscale(ctx, img, dx, dy, dw, dh){
-  const off = document.createElement('canvas');
-  off.width = Math.max(1, Math.round(img.width));
-  off.height = Math.max(1, Math.round(img.height));
-  const octx = off.getContext('2d');
-  octx.drawImage(img, 0, 0, off.width, off.height);
-  const imgData = octx.getImageData(0, 0, off.width, off.height);
-  const d = imgData.data;
-  for(let i=0; i<d.length; i+=4){
-    // luminance-weighted grayscale (perceptual, matches print conversion norms)
-    const gray = d[i]*0.299 + d[i+1]*0.587 + d[i+2]*0.114;
-    d[i] = d[i+1] = d[i+2] = gray;
+//
+// PENTING (fix "hasil cetak B&W kegelapan"): konversi grayscale di sini
+// dulunya MURNI luminance mapping tanpa koreksi apapun -- jadi foto yg
+// aslinya kurang cahaya otomatis ikut mencetak gelap/legam, tidak ada
+// jalan keluar selain foto ulang. Sekarang terima parameter `adjust`
+// opsional (dari card.adjust, diisi lewat modal "Sesuaikan Foto") yg
+// diterapkan LEBIH DULU (brightness/contrast/shadows/highlights/sharpen)
+// sebelum dikonversi ke grayscale -- jadi user bisa mengoreksi manual
+// tanpa perlu foto ulang KTP fisiknya.
+function drawImageGrayscale(ctx, img, dx, dy, dw, dh, adjust){
+  const off = applyManualAdjust(img, adjust || DEFAULT_ADJUST, { forceGrayscale: true });
+  ctx.drawImage(off, dx, dy, dw, dh);
+}
+
+// Versi mode WARNA dari fungsi di atas: sebelumnya cetak mode warna
+// SELALU pakai ctx.drawImage(img,...) apa adanya, jadi penyesuaian
+// manual (mis. terangkan foto gelap) TIDAK berlaku sama sekali kalau
+// user cetak berwarna, cuma berlaku kalau BW -- padahal foto gelap ya
+// tetap gelap juga kalau dicetak berwarna. Sekarang mode warna juga
+// lewat pipeline penyesuaian yang sama (cuma tanpa forceGrayscale),
+// supaya hasilnya konsisten: apa yg diatur di modal "Sesuaikan Foto"
+// SELALU berefek ke hasil cetak, di mode warna maupun hitam-putih.
+function drawImageAdjusted(ctx, img, dx, dy, dw, dh, adjust){
+  if(!adjust || isAdjustNeutral(adjust)){
+    ctx.drawImage(img, dx, dy, dw, dh);
+    return;
   }
-  octx.putImageData(imgData, 0, 0);
+  const off = applyManualAdjust(img, adjust, { forceGrayscale: false });
   ctx.drawImage(off, dx, dy, dw, dh);
 }
 
@@ -2970,9 +3508,9 @@ function drawPageOfCards(ctx, pageCards, layout, pageWpx, pageHpx, onImagesReady
       // bagian foto/kop provinsi di ATAS, bukan malah jadi di bawah.
       ctx.rotate(-Math.PI/2);
       if(printMode === 'BW'){
-        drawImageGrayscale(ctx, img, -blockHpx/2, -photoWpx/2, blockHpx, photoWpx);
+        drawImageGrayscale(ctx, img, -blockHpx/2, -photoWpx/2, blockHpx, photoWpx, card.adjust);
       } else {
-        ctx.drawImage(img, -blockHpx/2, -photoWpx/2, blockHpx, photoWpx);
+        drawImageAdjusted(ctx, img, -blockHpx/2, -photoWpx/2, blockHpx, photoWpx, card.adjust);
       }
       ctx.restore();
 
@@ -3340,4 +3878,5 @@ initLayoutModeSelect();
 initCardSizeInputs();
 initColorModeToggle();
 initThemeSettings();
+initAdjustModal();
 renderGrid();
